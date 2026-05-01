@@ -1,0 +1,26 @@
+{
+  "name": "northendtech/woo-logistics-plugin",
+  "description": "WooCommerce logistics desk for Canada Post label creation and printing.",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": ">=8.1",
+    "setasign/fpdi": ">=2.6.6 <3.0",
+    "setasign/fpdf": ">=1.8 <2.0"
+  },
+  "require-dev": {
+    "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+    "phpcompatibility/phpcompatibility-wp": "^2.1",
+    "wp-coding-standards/wpcs": "^3.1"
+  },
+  "scripts": {
+    "lint": "phpcs",
+    "lint:fix": "phpcbf",
+    "test:unit": "php tests/unit.php"
+  },
+  "config": {
+    "allow-plugins": {
+      "dealerdirect/phpcodesniffer-composer-installer": true
+    }
+  }
+}

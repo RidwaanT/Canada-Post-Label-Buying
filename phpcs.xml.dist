@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<ruleset name="Woo Logistics Plugin">
+  <description>WordPress-oriented checks for Woo Logistics Plugin.</description>
+  <file>woo-logistics-plugin.php</file>
+  <file>uninstall.php</file>
+  <file>includes</file>
+  <arg name="extensions" value="php"/>
+  <rule ref="WordPress"/>
+  <rule ref="PHPCompatibilityWP"/>
+  <rule ref="Squiz.Commenting.VariableComment.Missing">
+    <exclude-pattern>*</exclude-pattern>
+  </rule>
+  <rule ref="Squiz.Commenting.FunctionComment.MissingParamTag">
+    <exclude-pattern>*</exclude-pattern>
+  </rule>
+  <rule ref="Squiz.Commenting.FunctionComment.ParamNameNoMatch">
+    <exclude-pattern>*</exclude-pattern>
+  </rule>
+  <rule ref="Squiz.Commenting.FunctionCommentThrowTag.Missing">
+    <exclude-pattern>*</exclude-pattern>
+  </rule>
+  <rule ref="Generic.Files.LineLength">
+    <exclude-pattern>*</exclude-pattern>
+  </rule>
+  <rule ref="Universal.Operators.DisallowShortTernary.Found">
+    <exclude-pattern>*</exclude-pattern>
+  </rule>
+  <rule ref="WordPress.Security.EscapeOutput.ExceptionNotEscaped">
+    <exclude-pattern>includes/class-wlp-canada-post-client.php</exclude-pattern>
+  </rule>
+  <rule ref="WordPress.Security.NonceVerification.Missing">
+    <exclude-pattern>includes/class-wlp-admin.php</exclude-pattern>
+  </rule>
+  <rule ref="WordPress.WP.Capabilities.Unknown">
+    <exclude-pattern>includes/class-wlp-admin.php</exclude-pattern>
+  </rule>
+  <rule ref="WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode">
+    <exclude-pattern>includes/class-wlp-canada-post-client.php</exclude-pattern>
+  </rule>
+  <config name="testVersion" value="8.1-"/>
+</ruleset>

@@ -142,6 +142,7 @@
 .wlp-drawer-option {
   align-items: center;
   display: flex;
+  font-weight: 600;
   gap: 8px;
   margin: 8px 0 16px;
 }

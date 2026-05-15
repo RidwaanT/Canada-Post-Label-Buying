@@ -220,7 +220,7 @@ wlp_assert(array('processing', 'completed') === $statuses, 'Expected statuses to
 wlp_assert('DOM.XP' === WLP_Settings::sanitize_service_code('dom.xp'), 'Expected valid service code to be normalized.');
 wlp_assert('' === WLP_Settings::sanitize_service_code('DOM.BAD'), 'Expected invalid service code to be rejected.');
 wlp_assert('DOM.XP' === WLP_Settings::default_service_code(), 'Expected default service option readback.');
-wlp_assert(array('', 'DOM.RP', 'DOM.XP', 'DOM.EP', 'DOM.PC') === array_keys(WLP_Settings::service_options()), 'Expected service options in label display order.');
+wlp_assert(array('', 'DOM.RP', 'DOM.EP', 'DOM.XP', 'DOM.PC') === array_keys(WLP_Settings::service_options()), 'Expected service options in label display order.');
 wlp_assert(! WLP_Settings::signature_required(), 'Expected signature option to default off.');
 wlp_assert('0' === WLP_Settings::sanitize_non_negative_float('0'), 'Expected zero base weight to be accepted.');
 wlp_assert('' === WLP_Settings::sanitize_non_negative_float('-0.01'), 'Expected negative base weight to be rejected.');
@@ -278,14 +278,14 @@ $rates         = $filter_method->invoke(
 		array('service_code' => 'DOM.XP', 'service_name' => 'Xpresspost', 'due' => '25.00'),
 	)
 );
-wlp_assert(array('DOM.RP', 'DOM.XP', 'DOM.EP', 'DOM.PC') === array_column($rates, 'service_code'), 'Expected rates sorted by service display order.');
+wlp_assert(array('DOM.RP', 'DOM.EP', 'DOM.XP', 'DOM.PC') === array_column($rates, 'service_code'), 'Expected rates sorted by service display order.');
 
 $wlp_test_options[WLP_Settings::OPTION_HIDE_REGULAR]    = 'yes';
 $wlp_test_options[WLP_Settings::OPTION_DEFAULT_SERVICE] = 'DOM.RP';
-wlp_assert(array('', 'DOM.XP', 'DOM.EP', 'DOM.PC') === array_keys(WLP_Settings::service_options()), 'Expected Regular Parcel hidden from service options.');
+wlp_assert(array('', 'DOM.EP', 'DOM.XP', 'DOM.PC') === array_keys(WLP_Settings::service_options()), 'Expected Regular Parcel hidden from service options.');
 wlp_assert('' === WLP_Settings::default_service_code(), 'Expected hidden Regular Parcel default to fall back to cheapest.');
 $filtered_rates = $filter_method->invoke($client, $rates);
-wlp_assert(array('DOM.XP', 'DOM.EP', 'DOM.PC') === array_column($filtered_rates, 'service_code'), 'Expected Regular Parcel hidden from rates.');
+wlp_assert(array('DOM.EP', 'DOM.XP', 'DOM.PC') === array_column($filtered_rates, 'service_code'), 'Expected Regular Parcel hidden from rates.');
 
 $rate_xml_method = new ReflectionMethod(WLP_Canada_Post_Client::class, 'build_rate_xml');
 $rate_xml        = (string) $rate_xml_method->invoke($client, $weight_order, 'K1A0B1', array('weight' => 0.5, 'length' => 12, 'width' => 11, 'height' => 6));

@@ -38,12 +38,12 @@ final class WLP_Canada_Post_Client {
 				'name' => 'Canada Post Regular Parcel',
 			),
 			array(
-				'id'   => 'DOM.XP',
-				'name' => 'Canada Post Xpresspost',
-			),
-			array(
 				'id'   => 'DOM.EP',
 				'name' => 'Canada Post Expedited Parcel',
+			),
+			array(
+				'id'   => 'DOM.XP',
+				'name' => 'Canada Post Xpresspost',
 			),
 			array(
 				'id'   => 'DOM.PC',
@@ -390,13 +390,13 @@ final class WLP_Canada_Post_Client {
 	}
 
 	/**
-	 * Sorts Canada Post services as Regular, Xpresspost, Expedited, Priority.
+	 * Sorts Canada Post services as Regular, Expedited, Xpresspost, Priority.
 	 */
 	private function service_sort_rank( string $service_code ): int {
 		$order = array(
 			'DOM.RP' => 10,
-			'DOM.XP' => 20,
-			'DOM.EP' => 30,
+			'DOM.EP' => 20,
+			'DOM.XP' => 30,
 			'DOM.PC' => 40,
 		);
 

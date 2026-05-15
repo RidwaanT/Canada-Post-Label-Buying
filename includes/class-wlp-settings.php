@@ -207,8 +207,8 @@ final class WLP_Settings {
 		return array(
 			''       => __( 'Cheapest returned rate', 'woo-logistics-plugin' ),
 			'DOM.RP' => __( 'Canada Post Regular Parcel', 'woo-logistics-plugin' ),
-			'DOM.XP' => __( 'Canada Post Xpresspost', 'woo-logistics-plugin' ),
 			'DOM.EP' => __( 'Canada Post Expedited Parcel', 'woo-logistics-plugin' ),
+			'DOM.XP' => __( 'Canada Post Xpresspost', 'woo-logistics-plugin' ),
 			'DOM.PC' => __( 'Canada Post Priority', 'woo-logistics-plugin' ),
 		);
 	}

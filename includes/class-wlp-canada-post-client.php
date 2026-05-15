@@ -42,12 +42,12 @@ final class WLP_Canada_Post_Client {
 				'name' => 'Canada Post Xpresspost',
 			),
 			array(
-				'id'   => 'DOM.PC',
-				'name' => 'Canada Post Priority',
-			),
-			array(
 				'id'   => 'DOM.EP',
 				'name' => 'Canada Post Expedited Parcel',
+			),
+			array(
+				'id'   => 'DOM.PC',
+				'name' => 'Canada Post Priority',
 			),
 		);
 	}
@@ -70,7 +70,7 @@ final class WLP_Canada_Post_Client {
 		$body = $this->request(
 			'POST',
 			'/rs/ship/price',
-			$this->build_rate_xml( $destination_postal, $preset ),
+			$this->build_rate_xml( $order, $destination_postal, $preset ),
 			'application/vnd.cpc.ship.rate-v4+xml',
 			'application/vnd.cpc.ship.rate-v4+xml'
 		);
@@ -155,6 +155,16 @@ final class WLP_Canada_Post_Client {
 	}
 
 	/**
+	 * Calculates the shipment weight Canada Post will receive for a preset.
+	 *
+	 * @param WC_Order                    $order WooCommerce order.
+	 * @param array<string, float|string> $preset Package preset.
+	 */
+	public function shipment_weight( WC_Order $order, array $preset ): string {
+		return $this->parcel_weight( $order, $preset );
+	}
+
+	/**
 	 * Finds a service display name by code.
 	 */
 	public function service_name( string $service_code ): string {
@@ -220,11 +230,11 @@ final class WLP_Canada_Post_Client {
 	 *
 	 * @param array<string, float|string> $preset Package preset.
 	 */
-	private function build_rate_xml( string $destination_postal, array $preset ): string {
+	private function build_rate_xml( WC_Order $order, string $destination_postal, array $preset ): string {
 		$xml = new SimpleXMLElement( '<mailing-scenario xmlns="http://www.canadapost.ca/ws/ship/rate-v4"></mailing-scenario>' );
 		$xml->addChild( 'customer-number', $this->required_option( WLP_Settings::OPTION_CUSTOMER, __( 'Customer number', 'woo-logistics-plugin' ) ) );
 		$parcel = $xml->addChild( 'parcel-characteristics' );
-		$parcel->addChild( 'weight', (string) $preset['weight'] );
+		$parcel->addChild( 'weight', $this->parcel_weight( $order, $preset ) );
 		$dimensions = $parcel->addChild( 'dimensions' );
 		$dimensions->addChild( 'length', (string) $preset['length'] );
 		$dimensions->addChild( 'width', (string) $preset['width'] );
@@ -304,7 +314,7 @@ final class WLP_Canada_Post_Client {
 		$destination_address->addChild( 'postal-zip-code', $destination_postal );
 
 		$parcel = $delivery->addChild( 'parcel-characteristics' );
-		$parcel->addChild( 'weight', (string) $preset['weight'] );
+		$parcel->addChild( 'weight', $this->parcel_weight( $order, $preset ) );
 		$dimensions = $parcel->addChild( 'dimensions' );
 		$dimensions->addChild( 'length', (string) $preset['length'] );
 		$dimensions->addChild( 'width', (string) $preset['width'] );
@@ -334,7 +344,47 @@ final class WLP_Canada_Post_Client {
 			);
 		}
 
-		return $rates;
+		return $this->filter_and_sort_rates( $rates );
+	}
+
+	/**
+	 * Applies configured service policy and display order to returned rates.
+	 *
+	 * @param array<int, array<string, string>> $rates Rates.
+	 * @return array<int, array<string, string>>
+	 */
+	private function filter_and_sort_rates( array $rates ): array {
+		$filtered = array_values(
+			array_filter(
+				$rates,
+				static function ( array $rate ): bool {
+					return ! WLP_Settings::hide_regular_parcel() || 'DOM.RP' !== ( $rate['service_code'] ?? '' );
+				}
+			)
+		);
+
+		usort(
+			$filtered,
+			function ( array $left, array $right ): int {
+				return $this->service_sort_rank( (string) ( $left['service_code'] ?? '' ) ) <=> $this->service_sort_rank( (string) ( $right['service_code'] ?? '' ) );
+			}
+		);
+
+		return $filtered;
+	}
+
+	/**
+	 * Sorts Canada Post services as Regular, Xpresspost, Expedited, Priority.
+	 */
+	private function service_sort_rank( string $service_code ): int {
+		$order = array(
+			'DOM.RP' => 10,
+			'DOM.XP' => 20,
+			'DOM.EP' => 30,
+			'DOM.PC' => 40,
+		);
+
+		return $order[ $service_code ] ?? 999;
 	}
 
 	/**
@@ -468,6 +518,96 @@ final class WLP_Canada_Post_Client {
 		if ( 'CA' !== strtoupper( (string) $order->get_shipping_country() ) ) {
 			throw new RuntimeException( __( 'Woo Logistics Plugin v1 supports Canada domestic shipments only.', 'woo-logistics-plugin' ) );
 		}
+	}
+
+	/**
+	 * Returns the Canada Post parcel weight in kilograms.
+	 *
+	 * @param WC_Order                    $order WooCommerce order.
+	 * @param array<string, float|string> $preset Package preset.
+	 */
+	private function parcel_weight( WC_Order $order, array $preset ): string {
+		if ( ! WLP_Settings::use_product_weight() ) {
+			return $this->format_weight( (float) $preset['weight'] );
+		}
+
+		$product_weight = $this->order_product_weight_kg( $order );
+		$base_weight    = WLP_Settings::use_base_weight() ? WLP_Settings::base_weight_kg() : 0.0;
+
+		if ( $product_weight > 0 ) {
+			return $this->format_weight( $product_weight + $base_weight );
+		}
+
+		return $this->format_weight( (float) $preset['weight'] );
+	}
+
+	/**
+	 * Sums shippable WooCommerce product weights in kilograms.
+	 */
+	private function order_product_weight_kg( WC_Order $order ): float {
+		$total   = 0.0;
+		$missing = array();
+
+		foreach ( $order->get_items( 'line_item' ) as $item ) {
+			if ( ! is_object( $item ) || ! method_exists( $item, 'get_product' ) ) {
+				continue;
+			}
+
+			$product = $item->get_product();
+			if ( ! $product || ( method_exists( $product, 'needs_shipping' ) && ! $product->needs_shipping() ) ) {
+				continue;
+			}
+
+			$quantity = method_exists( $item, 'get_quantity' ) ? max( 0.0, (float) $item->get_quantity() ) : 1.0;
+			$weight   = method_exists( $product, 'get_weight' ) ? (string) $product->get_weight() : '';
+
+			if ( '' === trim( $weight ) || ! is_numeric( $weight ) || (float) $weight <= 0 ) {
+				$missing[] = method_exists( $product, 'get_name' ) ? (string) $product->get_name() : __( 'Unnamed product', 'woo-logistics-plugin' );
+				continue;
+			}
+
+			$total += $this->weight_to_kg( (float) $weight ) * $quantity;
+		}
+
+		if ( ! empty( $missing ) ) {
+			throw new RuntimeException(
+				sprintf(
+					/* translators: %s: comma-separated product names. */
+					__( 'Cannot calculate shipment weight because these products are missing weights: %s.', 'woo-logistics-plugin' ),
+					implode( ', ', array_slice( $missing, 0, 5 ) )
+				)
+			);
+		}
+
+		return $total;
+	}
+
+	/**
+	 * Converts a WooCommerce product weight to kilograms.
+	 */
+	private function weight_to_kg( float $weight ): float {
+		if ( function_exists( 'wc_get_weight' ) ) {
+			return (float) wc_get_weight( $weight, 'kg' );
+		}
+
+		$unit = strtolower( (string) get_option( 'woocommerce_weight_unit', 'kg' ) );
+		switch ( $unit ) {
+			case 'g':
+				return $weight / 1000;
+			case 'lbs':
+				return $weight * 0.45359237;
+			case 'oz':
+				return $weight * 0.028349523125;
+			default:
+				return $weight;
+		}
+	}
+
+	/**
+	 * Formats kilograms for Canada Post XML.
+	 */
+	private function format_weight( float $weight ): string {
+		return number_format( max( 0.001, $weight ), 3, '.', '' );
 	}
 
 	/**

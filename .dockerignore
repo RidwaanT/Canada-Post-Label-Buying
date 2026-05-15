@@ -1,0 +1,9 @@
+.git
+node_modules
+tests
+vendor/bin
+playwright-report
+test-results
+*.log
+*.zip
+dist

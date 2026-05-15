@@ -98,7 +98,7 @@
     }
   };
 
-  const updateCardAfterLabel = (card, printUrl) => {
+  const updateCardAfterLabel = (card, printUrl, shipment = {}, packageDetails = {}) => {
     card.setAttribute('data-has-label', 'yes');
     card.setAttribute('data-print-url', printUrl || '');
     const pill = card.querySelector('.wlp-pill');
@@ -106,6 +106,14 @@
       pill.classList.remove('is-pending');
       pill.classList.add('is-ready');
       pill.textContent = 'Labeled';
+    }
+    const tracking = card.querySelector('[data-wlp-card-tracking]');
+    if (tracking && shipment.tracking_number) {
+      tracking.textContent = shipment.tracking_number;
+    }
+    const packageTarget = card.querySelector('[data-wlp-card-package]');
+    if (packageTarget && packageDetails.preset) {
+      packageTarget.textContent = packageDetails.preset;
     }
     updateSelectionCount();
   };
@@ -240,7 +248,7 @@
       `;
       const card = document.querySelector(`[data-wlp-order-card][data-order-id="${CSS.escape(buyButton.getAttribute('data-order-id'))}"]`);
       if (card) {
-        updateCardAfterLabel(card, result.data.printUrl);
+        updateCardAfterLabel(card, result.data.printUrl, result.data.shipment, result.data.package);
       }
       return;
     }
@@ -258,10 +266,14 @@
       }
 
       const url = `${wlpAdmin.bulkPrintUrl}&order_ids=${encodeURIComponent(orderIds.join(','))}&_wpnonce=${encodeURIComponent(wlpAdmin.bulkPrintNonce || '')}`;
-      const opened = window.open(url, '_blank', 'noopener');
+      const opened = window.open(url, '_blank');
       if (!opened) {
-        window.location.href = url;
+        bulkStatus(text.popupNotice || 'Allow popups for this site to bulk print labels.');
+        return;
       }
+
+      opened.opener = null;
+      opened.focus();
       return;
     }
 
@@ -296,7 +308,7 @@
         if (result.success && result.data && result.data.printUrl) {
           success += 1;
           printUrls.push(result.data.printUrl);
-          updateCardAfterLabel(card, result.data.printUrl);
+          updateCardAfterLabel(card, result.data.printUrl, result.data.shipment, result.data.package);
         } else {
           failed += 1;
           failures.push({
@@ -312,6 +324,28 @@
       quickBuyButton.disabled = false;
       bulkStatus(`${text.quickDone || 'Quick buy complete.'} ${success} bought, ${failed} failed.`, failures);
 
+    }
+
+    const dummyOrderButton = event.target.closest('[data-wlp-create-dummy-order]');
+    if (dummyOrderButton) {
+      dummyOrderButton.disabled = true;
+      bulkStatus(text.creatingDummy || 'Creating test order...');
+
+      const result = await post('wlp_create_dummy_order', {});
+
+      if (!result.success) {
+        dummyOrderButton.disabled = false;
+        bulkStatus(
+          result.data && result.data.message ? result.data.message : (text.dummyFailed || 'Failed to create test order.'),
+          [{ orderId: 'test', orderNumber: 'Test order', message: result.data && result.data.message ? result.data.message : '' }],
+        );
+        return;
+      }
+
+      bulkStatus(text.dummyCreated || 'Test order created. Reloading...');
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 600);
     }
   });
 

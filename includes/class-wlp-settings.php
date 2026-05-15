@@ -15,22 +15,27 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Settings registry and helpers.
  */
 final class WLP_Settings {
-	public const OPTION_SANDBOX        = 'wlp_cp_sandbox';
-	public const OPTION_API_USER       = 'wlp_cp_api_user';
-	public const OPTION_API_PASSWORD   = 'wlp_cp_api_password';
-	public const OPTION_CUSTOMER       = 'wlp_cp_customer_number';
-	public const OPTION_ORIGIN_NAME    = 'wlp_cp_origin_name';
-	public const OPTION_ORIGIN_COMPANY = 'wlp_cp_origin_company';
-	public const OPTION_ORIGIN_EMAIL   = 'wlp_cp_origin_email';
-	public const OPTION_ORIGIN_PHONE   = 'wlp_cp_origin_phone';
-	public const OPTION_ORIGIN_ADDR_1  = 'wlp_cp_origin_address_1';
-	public const OPTION_ORIGIN_ADDR_2  = 'wlp_cp_origin_address_2';
-	public const OPTION_ORIGIN_CITY    = 'wlp_cp_origin_city';
-	public const OPTION_ORIGIN_PROV    = 'wlp_cp_origin_province';
-	public const OPTION_ORIGIN_POSTAL  = 'wlp_cp_origin_postal_code';
-	public const OPTION_NOTIFY         = 'wlp_cp_customer_notifications';
-	public const OPTION_PRESETS        = 'wlp_package_presets';
-	public const OPTION_STATUSES       = 'wlp_eligible_statuses';
+	public const OPTION_SANDBOX         = 'wlp_cp_sandbox';
+	public const OPTION_API_USER        = 'wlp_cp_api_user';
+	public const OPTION_API_PASSWORD    = 'wlp_cp_api_password';
+	public const OPTION_CUSTOMER        = 'wlp_cp_customer_number';
+	public const OPTION_ORIGIN_NAME     = 'wlp_cp_origin_name';
+	public const OPTION_ORIGIN_COMPANY  = 'wlp_cp_origin_company';
+	public const OPTION_ORIGIN_EMAIL    = 'wlp_cp_origin_email';
+	public const OPTION_ORIGIN_PHONE    = 'wlp_cp_origin_phone';
+	public const OPTION_ORIGIN_ADDR_1   = 'wlp_cp_origin_address_1';
+	public const OPTION_ORIGIN_ADDR_2   = 'wlp_cp_origin_address_2';
+	public const OPTION_ORIGIN_CITY     = 'wlp_cp_origin_city';
+	public const OPTION_ORIGIN_PROV     = 'wlp_cp_origin_province';
+	public const OPTION_ORIGIN_POSTAL   = 'wlp_cp_origin_postal_code';
+	public const OPTION_NOTIFY          = 'wlp_cp_customer_notifications';
+	public const OPTION_PRESETS         = 'wlp_package_presets';
+	public const OPTION_STATUSES        = 'wlp_eligible_statuses';
+	public const OPTION_PRODUCT_WEIGHT  = 'wlp_calculate_product_weight';
+	public const OPTION_BASE_WEIGHT     = 'wlp_base_package_weight_kg';
+	public const OPTION_USE_BASE_WEIGHT = 'wlp_use_base_package_weight';
+	public const OPTION_DEFAULT_SERVICE = 'wlp_default_service_code';
+	public const OPTION_HIDE_REGULAR    = 'wlp_hide_regular_parcel';
 
 	/**
 	 * Registers settings.
@@ -52,6 +57,11 @@ final class WLP_Settings {
 		register_setting( 'wlp_settings', self::OPTION_API_PASSWORD, array( 'sanitize_callback' => 'sanitize_text_field' ) );
 		register_setting( 'wlp_settings', self::OPTION_SANDBOX, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_NOTIFY, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_PRODUCT_WEIGHT, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_USE_BASE_WEIGHT, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_BASE_WEIGHT, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_non_negative_float' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_DEFAULT_SERVICE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_service_code' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_HIDE_REGULAR, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_PRESETS, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_presets' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_STATUSES, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_statuses' ) ) );
 	}
@@ -126,12 +136,103 @@ final class WLP_Settings {
 	}
 
 	/**
+	 * Returns true when Canada Post parcel weights should be summed from order products.
+	 */
+	public static function use_product_weight(): bool {
+		return 'yes' === get_option( self::OPTION_PRODUCT_WEIGHT, 'no' );
+	}
+
+	/**
+	 * Returns true when product-derived parcel weights should include package base weight.
+	 */
+	public static function use_base_weight(): bool {
+		return 'yes' === get_option( self::OPTION_USE_BASE_WEIGHT, 'no' );
+	}
+
+	/**
+	 * Returns configured package base weight in kilograms.
+	 */
+	public static function base_weight_kg(): float {
+		$value = self::non_negative_float( get_option( self::OPTION_BASE_WEIGHT, 0 ) );
+
+		return $value ?? 0.0;
+	}
+
+	/**
+	 * Returns configured default Canada Post service code for automatic buys.
+	 */
+	public static function default_service_code(): string {
+		$service_code = self::sanitize_service_code( get_option( self::OPTION_DEFAULT_SERVICE, '' ) );
+
+		return self::hide_regular_parcel() && 'DOM.RP' === $service_code ? '' : $service_code;
+	}
+
+	/**
+	 * Returns true when Regular Parcel should be hidden from label choices.
+	 */
+	public static function hide_regular_parcel(): bool {
+		return 'yes' === get_option( self::OPTION_HIDE_REGULAR, 'no' );
+	}
+
+	/**
+	 * Returns enabled Canada Post domestic service options.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function service_options(): array {
+		$options = self::all_service_options();
+
+		if ( self::hide_regular_parcel() ) {
+			unset( $options['DOM.RP'] );
+		}
+
+		return $options;
+	}
+
+	/**
+	 * Returns all supported Canada Post domestic service options.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function all_service_options(): array {
+		return array(
+			''       => __( 'Cheapest returned rate', 'woo-logistics-plugin' ),
+			'DOM.RP' => __( 'Canada Post Regular Parcel', 'woo-logistics-plugin' ),
+			'DOM.XP' => __( 'Canada Post Xpresspost', 'woo-logistics-plugin' ),
+			'DOM.EP' => __( 'Canada Post Expedited Parcel', 'woo-logistics-plugin' ),
+			'DOM.PC' => __( 'Canada Post Priority', 'woo-logistics-plugin' ),
+		);
+	}
+
+	/**
 	 * Sanitizes checkbox values.
 	 *
 	 * @param mixed $value Raw value.
 	 */
 	public static function sanitize_checkbox( $value ): string {
 		return 'yes' === $value ? 'yes' : 'no';
+	}
+
+	/**
+	 * Sanitizes a non-negative float option.
+	 *
+	 * @param mixed $value Raw value.
+	 */
+	public static function sanitize_non_negative_float( $value ): string {
+		$number = self::non_negative_float( $value );
+
+		return null === $number ? '' : (string) $number;
+	}
+
+	/**
+	 * Sanitizes a Canada Post service code.
+	 *
+	 * @param mixed $value Raw value.
+	 */
+	public static function sanitize_service_code( $value ): string {
+		$code = strtoupper( sanitize_text_field( (string) $value ) );
+
+		return array_key_exists( $code, self::all_service_options() ) ? $code : '';
 	}
 
 	/**
@@ -267,5 +368,20 @@ final class WLP_Settings {
 		$number = (float) $value;
 
 		return $number > 0 ? $number : null;
+	}
+
+	/**
+	 * Returns a non-negative float or null.
+	 *
+	 * @param mixed $value Raw value.
+	 */
+	private static function non_negative_float( $value ): ?float {
+		if ( ! is_numeric( $value ) ) {
+			return null;
+		}
+
+		$number = (float) $value;
+
+		return $number >= 0 ? $number : null;
 	}
 }

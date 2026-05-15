@@ -15,6 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  * WooCommerce logistics admin page.
  */
 final class WLP_Admin {
+	private const DUMMY_PRODUCT_WEIGHT_GRAMS = 10.0;
+
 	private WLP_Canada_Post_Client $client;
 
 	/**
@@ -33,6 +35,7 @@ final class WLP_Admin {
 		add_action( 'wp_ajax_wlp_get_rates', array( $this, 'ajax_get_rates' ) );
 		add_action( 'wp_ajax_wlp_create_label', array( $this, 'ajax_create_label' ) );
 		add_action( 'wp_ajax_wlp_quick_buy_label', array( $this, 'ajax_quick_buy_label' ) );
+		add_action( 'wp_ajax_wlp_create_dummy_order', array( $this, 'ajax_create_dummy_order' ) );
 		add_action( 'admin_post_wlp_print_label', array( $this, 'print_label' ) );
 		add_action( 'admin_post_wlp_bulk_print_labels', array( $this, 'bulk_print_labels' ) );
 		add_action( 'add_meta_boxes', array( $this, 'register_order_box' ) );
@@ -78,26 +81,29 @@ final class WLP_Admin {
 			'wlp-admin',
 			'wlpAdmin',
 			array(
-				'ajaxUrl'     => admin_url( 'admin-ajax.php' ),
-				'nonce'       => wp_create_nonce( 'wlp_logistics' ),
-				'settingsUrl' => admin_url( 'admin.php?page=wlp-logistics-settings' ),
-				'bulkPrintUrl' => admin_url( 'admin-post.php?action=wlp_bulk_print_labels' ),
+				'ajaxUrl'        => admin_url( 'admin-ajax.php' ),
+				'nonce'          => wp_create_nonce( 'wlp_logistics' ),
+				'settingsUrl'    => admin_url( 'admin.php?page=wlp-logistics-settings' ),
+				'bulkPrintUrl'   => admin_url( 'admin-post.php?action=wlp_bulk_print_labels' ),
 				'bulkPrintNonce' => wp_create_nonce( 'wlp_bulk_print_labels' ),
-				'i18n'        => array(
-					'loadingRates' => __( 'Loading Canada Post rates...', 'woo-logistics-plugin' ),
-					'buying'       => __( 'Buying...', 'woo-logistics-plugin' ),
-					'buyLabel'     => __( 'Buy label', 'woo-logistics-plugin' ),
-					'failedRates'  => __( 'Failed to load rates.', 'woo-logistics-plugin' ),
-					'failedLabel'  => __( 'Failed to create label.', 'woo-logistics-plugin' ),
-					'reprint'      => __( 'Reprint existing label', 'woo-logistics-plugin' ),
-					'buyOverride'  => __( 'Buy replacement label', 'woo-logistics-plugin' ),
-					'tracking'     => __( 'Tracking', 'woo-logistics-plugin' ),
-					'printLabel'   => __( 'Print label', 'woo-logistics-plugin' ),
-					'confirm'      => __( 'This order already has a label. Buy a replacement label anyway?', 'woo-logistics-plugin' ),
-					'quickBuying'  => __( 'Buying quick labels...', 'woo-logistics-plugin' ),
-					'quickDone'    => __( 'Quick buy complete.', 'woo-logistics-plugin' ),
-					'selectOrders' => __( 'Select at least one order.', 'woo-logistics-plugin' ),
-					'popupNotice'  => __( 'Allow popups for this site to bulk print labels.', 'woo-logistics-plugin' ),
+				'i18n'           => array(
+					'loadingRates'  => __( 'Loading Canada Post rates...', 'woo-logistics-plugin' ),
+					'buying'        => __( 'Buying...', 'woo-logistics-plugin' ),
+					'buyLabel'      => __( 'Buy label', 'woo-logistics-plugin' ),
+					'failedRates'   => __( 'Failed to load rates.', 'woo-logistics-plugin' ),
+					'failedLabel'   => __( 'Failed to create label.', 'woo-logistics-plugin' ),
+					'reprint'       => __( 'Reprint existing label', 'woo-logistics-plugin' ),
+					'buyOverride'   => __( 'Buy replacement label', 'woo-logistics-plugin' ),
+					'tracking'      => __( 'Tracking', 'woo-logistics-plugin' ),
+					'printLabel'    => __( 'Print label', 'woo-logistics-plugin' ),
+					'confirm'       => __( 'This order already has a label. Buy a replacement label anyway?', 'woo-logistics-plugin' ),
+					'quickBuying'   => __( 'Buying quick labels...', 'woo-logistics-plugin' ),
+					'quickDone'     => __( 'Quick buy complete.', 'woo-logistics-plugin' ),
+					'selectOrders'  => __( 'Select at least one order.', 'woo-logistics-plugin' ),
+					'popupNotice'   => __( 'Allow popups for this site to bulk print labels.', 'woo-logistics-plugin' ),
+					'creatingDummy' => __( 'Creating test order...', 'woo-logistics-plugin' ),
+					'dummyCreated'  => __( 'Test order created. Reloading...', 'woo-logistics-plugin' ),
+					'dummyFailed'   => __( 'Failed to create test order.', 'woo-logistics-plugin' ),
 				),
 			)
 		);
@@ -136,6 +142,7 @@ final class WLP_Admin {
 					</div>
 					<button class="button button-primary" type="button" data-wlp-quick-buy-selected><?php echo esc_html__( 'Quick buy selected', 'woo-logistics-plugin' ); ?></button>
 					<button class="button" type="button" data-wlp-bulk-print-selected><?php echo esc_html__( 'Bulk print selected', 'woo-logistics-plugin' ); ?></button>
+					<button class="button" type="button" data-wlp-create-dummy-order><?php echo esc_html__( 'Create test order', 'woo-logistics-plugin' ); ?></button>
 					<a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=wlp-logistics-settings' ) ); ?>"><?php echo esc_html__( 'Settings', 'woo-logistics-plugin' ); ?></a>
 				</div>
 			</div>
@@ -165,7 +172,7 @@ final class WLP_Admin {
 			<div class="wlp-header">
 				<div>
 					<h1><?php echo esc_html__( 'Woo Logistics Settings', 'woo-logistics-plugin' ); ?></h1>
-					<?php if ( isset( $_GET['settings-updated'] ) ) : ?>
+					<?php if ( isset( $_GET['settings-updated'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 						<div class="notice notice-success inline wlp-settings-notice">
 							<p><?php echo esc_html__( 'Logistics settings saved.', 'woo-logistics-plugin' ); ?></p>
 						</div>
@@ -184,6 +191,8 @@ final class WLP_Admin {
 					<?php $this->field_password( WLP_Settings::OPTION_API_PASSWORD, __( 'API password', 'woo-logistics-plugin' ) ); ?>
 					<?php $this->field_text( WLP_Settings::OPTION_CUSTOMER, __( 'Customer number', 'woo-logistics-plugin' ) ); ?>
 					<?php $this->field_checkbox( WLP_Settings::OPTION_NOTIFY, __( 'Send Canada Post customer notifications', 'woo-logistics-plugin' ), 'yes' ); ?>
+					<?php $this->field_service_select( WLP_Settings::OPTION_DEFAULT_SERVICE, __( 'Default service for quick buy', 'woo-logistics-plugin' ), __( 'Quick buy uses this service when Canada Post returns it. If it is unavailable for an order, quick buy falls back to the cheapest returned rate.', 'woo-logistics-plugin' ) ); ?>
+					<?php $this->field_checkbox( WLP_Settings::OPTION_HIDE_REGULAR, __( 'Remove Regular Parcel as a label option', 'woo-logistics-plugin' ), 'no', __( 'When enabled, Regular Parcel is hidden from create-label choices and quick buy will not select it.', 'woo-logistics-plugin' ) ); ?>
 				</table>
 
 				<h2><?php echo esc_html__( 'Origin', 'woo-logistics-plugin' ); ?></h2>
@@ -203,6 +212,11 @@ final class WLP_Admin {
 				<?php $this->render_status_fields(); ?>
 
 				<h2><?php echo esc_html__( 'Package Presets', 'woo-logistics-plugin' ); ?></h2>
+				<table class="form-table" role="presentation">
+					<?php $this->field_checkbox( WLP_Settings::OPTION_PRODUCT_WEIGHT, __( 'Calculate shipment weight from WooCommerce products', 'woo-logistics-plugin' ), 'no', __( 'When enabled, Canada Post rates and labels use the order product weight total. Package presets still provide box dimensions and fallback weight for orders without shippable product lines.', 'woo-logistics-plugin' ) ); ?>
+					<?php $this->field_checkbox( WLP_Settings::OPTION_USE_BASE_WEIGHT, __( 'Add base package weight to product weights', 'woo-logistics-plugin' ), 'no', __( 'Use this for box, pouch, insert, and filler weight. It is added only when product-weight calculation is enabled.', 'woo-logistics-plugin' ) ); ?>
+					<?php $this->field_number( WLP_Settings::OPTION_BASE_WEIGHT, __( 'Base package weight (kg)', 'woo-logistics-plugin' ), '0.001', __( 'Example: 0.050 means 50 g is added before requesting Canada Post rates or labels.', 'woo-logistics-plugin' ) ); ?>
+				</table>
 				<?php $this->render_preset_fields(); ?>
 
 				<p class="submit wlp-settings-actions">
@@ -314,7 +328,13 @@ final class WLP_Admin {
 			$preset        = $this->client->find_preset( $preset_id );
 			$rates         = $this->client->get_rates( $order, $preset );
 			$selected_rate = $this->find_rate( $rates, $service_code );
-			$shipment      = $this->client->create_shipment( $order, $preset, $service_code );
+
+			if ( empty( $selected_rate ) ) {
+				throw new RuntimeException( __( 'Selected service is not available for this order and package.', 'woo-logistics-plugin' ) );
+			}
+
+			$shipment_weight = $this->client->shipment_weight( $order, $preset );
+			$shipment        = $this->client->create_shipment( $order, $preset, $service_code );
 
 			WLP_Order_Logistics::write_label(
 				$order,
@@ -329,6 +349,7 @@ final class WLP_Admin {
 					'shipping_currency'  => 'CAD',
 					'shipment_id'        => $shipment['shipment_id'],
 					'preset_id'          => $preset_id,
+					'shipment_weight_kg' => $shipment_weight,
 					'shipped_at'         => 'completed' === $order->get_status() ? gmdate( 'c' ) : null,
 				)
 			);
@@ -337,6 +358,7 @@ final class WLP_Admin {
 				array(
 					'shipment' => $shipment,
 					'printUrl' => $this->print_url( $order ),
+					'package'  => $this->label_package_payload( $preset ),
 				)
 			);
 		} catch ( Throwable $error ) {
@@ -369,14 +391,15 @@ final class WLP_Admin {
 			}
 
 			$rates = $this->client->get_rates( $order, $preset );
-			$rate  = $this->cheapest_rate( $rates );
+			$rate  = $this->preferred_rate( $rates );
 
 			if ( ! $rate || empty( $rate['service_code'] ) ) {
 				throw new RuntimeException( __( 'Canada Post returned no rates for quick buy.', 'woo-logistics-plugin' ) );
 			}
 
-			$service_code = $rate['service_code'];
-			$shipment     = $this->client->create_shipment( $order, $preset, $service_code );
+			$service_code    = $rate['service_code'];
+			$shipment_weight = $this->client->shipment_weight( $order, $preset );
+			$shipment        = $this->client->create_shipment( $order, $preset, $service_code );
 
 			WLP_Order_Logistics::write_label(
 				$order,
@@ -391,6 +414,7 @@ final class WLP_Admin {
 					'shipping_currency'  => 'CAD',
 					'shipment_id'        => $shipment['shipment_id'],
 					'preset_id'          => (string) $preset['id'],
+					'shipment_weight_kg' => $shipment_weight,
 					'shipped_at'         => 'completed' === $order->get_status() ? gmdate( 'c' ) : null,
 				)
 			);
@@ -399,6 +423,81 @@ final class WLP_Admin {
 				array(
 					'shipment' => $shipment,
 					'printUrl' => $this->print_url( $order ),
+					'package'  => $this->label_package_payload( $preset ),
+				)
+			);
+		} catch ( Throwable $error ) {
+			wp_send_json_error( array( 'message' => $error->getMessage() ), 500 );
+		}
+	}
+
+	/**
+	 * AJAX: creates one fake Canadian WooCommerce order for label testing.
+	 */
+	public function ajax_create_dummy_order(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Permission denied.', 'woo-logistics-plugin' ) ), 403 );
+		}
+
+		check_ajax_referer( 'wlp_logistics', 'nonce' );
+
+		if ( ! function_exists( 'wc_create_order' ) ) {
+			wp_send_json_error( array( 'message' => __( 'WooCommerce order creation is unavailable.', 'woo-logistics-plugin' ) ), 500 );
+		}
+
+		try {
+			$order = wc_create_order(
+				array(
+					'created_via' => 'woo-logistics-plugin-test-tool',
+					'status'      => 'processing',
+				)
+			);
+
+			if ( is_wp_error( $order ) ) {
+				throw new RuntimeException( $order->get_error_message() );
+			}
+
+			if ( ! $order instanceof WC_Order ) {
+				throw new RuntimeException( __( 'WooCommerce did not return an order.', 'woo-logistics-plugin' ) );
+			}
+
+			$address = $this->dummy_order_address();
+			$order->set_address( $address, 'billing' );
+			$order->set_address( $address, 'shipping' );
+			$order->set_currency( 'CAD' );
+
+			$products        = $this->dummy_products();
+			$product_count   = random_int( 1, min( 5, count( $products ) ) );
+			$product_indexes = array_rand( $products, $product_count );
+			$product_indexes = is_array( $product_indexes ) ? $product_indexes : array( $product_indexes );
+			$total_quantity  = 0;
+
+			foreach ( $product_indexes as $product_index ) {
+				$quantity = random_int( 1, 4 );
+				$order->add_product( $products[ $product_index ], $quantity );
+				$total_quantity += $quantity;
+			}
+
+			$order->update_meta_data( '_wlp_dummy_order', 'yes' );
+			$order->update_meta_data( '_wlp_dummy_item_weight_g', (string) self::DUMMY_PRODUCT_WEIGHT_GRAMS );
+			$order->update_meta_data( '_wlp_dummy_total_product_quantity', (string) $total_quantity );
+			$order->add_order_note(
+				sprintf(
+					/* translators: 1: line item count, 2: product quantity, 3: grams per product unit. */
+					__( 'Created by Woo Logistics Plugin test order tool with %1$d randomized product lines and %2$d total %3$s g product units.', 'woo-logistics-plugin' ),
+					count( $product_indexes ),
+					$total_quantity,
+					$this->dummy_product_weight_grams_label()
+				)
+			);
+			$order->calculate_totals();
+			$order->save();
+
+			wp_send_json_success(
+				array(
+					'orderId'     => $order->get_id(),
+					'orderNumber' => $order->get_order_number(),
+					'editUrl'     => $order->get_edit_order_url(),
 				)
 			);
 		} catch ( Throwable $error ) {
@@ -447,12 +546,12 @@ final class WLP_Admin {
 			wp_die( esc_html__( 'You do not have permission to print labels.', 'woo-logistics-plugin' ) );
 		}
 
+		check_admin_referer( 'wlp_bulk_print_labels' );
+
 		$order_ids = $this->request_order_ids();
 		if ( empty( $order_ids ) ) {
 			wp_die( esc_html__( 'Select at least one labeled order to print.', 'woo-logistics-plugin' ) );
 		}
-
-		check_admin_referer( 'wlp_bulk_print_labels' );
 
 		$labels = array();
 		foreach ( $order_ids as $order_id ) {
@@ -490,8 +589,9 @@ final class WLP_Admin {
 	 * Renders one order card.
 	 */
 	private function render_order_card( WC_Order $order ): void {
-		$meta      = WLP_Order_Logistics::read( $order );
-		$has_label = WLP_Order_Logistics::has_label( $order );
+		$meta            = WLP_Order_Logistics::read( $order );
+		$has_label       = WLP_Order_Logistics::has_label( $order );
+		$package_preview = $this->order_package_preview( $order, $meta, $has_label );
 		?>
 		<section class="wlp-card" data-wlp-order-card data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>" data-has-label="<?php echo esc_attr( $has_label ? 'yes' : 'no' ); ?>" data-print-url="<?php echo esc_url( $has_label ? $this->print_url( $order ) : '' ); ?>">
 			<label class="wlp-select">
@@ -508,7 +608,8 @@ final class WLP_Admin {
 			<dl class="wlp-facts">
 				<div><dt><?php echo esc_html__( 'Status', 'woo-logistics-plugin' ); ?></dt><dd><?php echo esc_html( wc_get_order_status_name( $order->get_status() ) ); ?></dd></div>
 				<div><dt><?php echo esc_html__( 'Service', 'woo-logistics-plugin' ); ?></dt><dd><?php echo esc_html( $meta['service_name'] ?: '-' ); ?></dd></div>
-				<div><dt><?php echo esc_html__( 'Tracking', 'woo-logistics-plugin' ); ?></dt><dd><?php echo esc_html( $meta['tracking_number'] ?: '-' ); ?></dd></div>
+				<div><dt><?php echo esc_html__( 'Tracking', 'woo-logistics-plugin' ); ?></dt><dd data-wlp-card-tracking><?php echo esc_html( $meta['tracking_number'] ?: '-' ); ?></dd></div>
+				<div><dt><?php echo esc_html__( 'Package', 'woo-logistics-plugin' ); ?></dt><dd data-wlp-card-package><?php echo esc_html( $package_preview['preset'] ); ?></dd></div>
 			</dl>
 			<div class="wlp-actions">
 				<button class="button button-primary" type="button" data-wlp-create-label data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html( $has_label ? __( 'View label options', 'woo-logistics-plugin' ) : __( 'Create label', 'woo-logistics-plugin' ) ); ?></button>
@@ -518,6 +619,68 @@ final class WLP_Admin {
 			</div>
 		</section>
 		<?php
+	}
+
+	/**
+	 * Builds the package summary for an order card.
+	 *
+	 * @param WC_Order              $order WooCommerce order.
+	 * @param array<string, string> $meta Logistics metadata.
+	 * @return array{preset: string}
+	 */
+	private function order_package_preview( WC_Order $order, array $meta, bool $has_label ): array {
+		$preset       = null;
+		$preset_label = '-';
+
+		if ( $has_label ) {
+			if ( '' !== $meta['preset_id'] ) {
+				try {
+					$preset       = $this->client->find_preset( $meta['preset_id'] );
+					$preset_label = $this->preset_label( $preset );
+				} catch ( Throwable $error ) {
+					$preset_label = $meta['preset_id'];
+				}
+			}
+		} else {
+			$presets = $this->client->get_presets();
+			$preset  = $presets[0] ?? null;
+
+			if ( is_array( $preset ) ) {
+				$preset_label = $this->preset_label( $preset );
+			}
+		}
+
+		return array(
+			'preset' => $preset_label,
+		);
+	}
+
+	/**
+	 * Formats a package preset for admin display.
+	 *
+	 * @param array<string, float|string> $preset Package preset.
+	 */
+	private function preset_label( array $preset ): string {
+		$name = trim( (string) ( $preset['name'] ?? '' ) );
+		$id   = trim( (string) ( $preset['id'] ?? '' ) );
+
+		if ( '' !== $name && '' !== $id ) {
+			return sprintf( '%1$s (%2$s)', $name, $id );
+		}
+
+		return $name ?: $id ?: '-';
+	}
+
+	/**
+	 * Builds package details returned after an AJAX label purchase.
+	 *
+	 * @param array<string, float|string> $preset Package preset.
+	 * @return array{preset: string}
+	 */
+	private function label_package_payload( array $preset ): array {
+		return array(
+			'preset' => $this->preset_label( $preset ),
+		);
 	}
 
 	/**
@@ -544,6 +707,46 @@ final class WLP_Admin {
 		<tr>
 			<th scope="row"><label for="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th>
 			<td><input class="regular-text" id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>" value="<?php echo esc_attr( $value ); ?>" type="text"></td>
+		</tr>
+		<?php
+	}
+
+	/**
+	 * Renders a number setting row.
+	 */
+	private function field_number( string $key, string $label, string $step, string $description = '' ): void {
+		$value = (string) get_option( $key, '' );
+		?>
+		<tr>
+			<th scope="row"><label for="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th>
+			<td>
+				<input class="regular-text" id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>" value="<?php echo esc_attr( $value ); ?>" type="number" step="<?php echo esc_attr( $step ); ?>" min="0">
+				<?php if ( '' !== $description ) : ?>
+					<p class="description"><?php echo esc_html( $description ); ?></p>
+				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
+	}
+
+	/**
+	 * Renders a Canada Post service selector.
+	 */
+	private function field_service_select( string $key, string $label, string $description = '' ): void {
+		$value = WLP_Settings::default_service_code();
+		?>
+		<tr>
+			<th scope="row"><label for="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th>
+			<td>
+				<select class="regular-text" id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>">
+					<?php foreach ( WLP_Settings::service_options() as $code => $name ) : ?>
+						<option value="<?php echo esc_attr( $code ); ?>" <?php selected( $value, $code ); ?>><?php echo esc_html( '' === $code ? $name : $code . ' - ' . $name ); ?></option>
+					<?php endforeach; ?>
+				</select>
+				<?php if ( '' !== $description ) : ?>
+					<p class="description"><?php echo esc_html( $description ); ?></p>
+				<?php endif; ?>
+			</td>
 		</tr>
 		<?php
 	}
@@ -605,11 +808,16 @@ final class WLP_Admin {
 	/**
 	 * Renders a checkbox setting row.
 	 */
-	private function field_checkbox( string $key, string $label, string $default_value = 'no' ): void {
+	private function field_checkbox( string $key, string $label, string $default_value = 'no', string $description = '' ): void {
 		?>
 		<tr>
 			<th scope="row"><?php echo esc_html( $label ); ?></th>
-			<td><input id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>" value="yes" type="checkbox" <?php checked( get_option( $key, $default_value ), 'yes' ); ?>></td>
+			<td>
+				<input id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>" value="yes" type="checkbox" <?php checked( get_option( $key, $default_value ), 'yes' ); ?>>
+				<?php if ( '' !== $description ) : ?>
+					<p class="description"><?php echo esc_html( $description ); ?></p>
+				<?php endif; ?>
+			</td>
 		</tr>
 		<?php
 	}
@@ -726,6 +934,25 @@ final class WLP_Admin {
 	}
 
 	/**
+	 * Returns the configured default service rate when available, otherwise cheapest.
+	 *
+	 * @param array<int, array<string, string>> $rates Rates.
+	 * @return array<string, string>
+	 */
+	private function preferred_rate( array $rates ): array {
+		$default_service = WLP_Settings::default_service_code();
+
+		if ( '' !== $default_service ) {
+			$default_rate = $this->find_rate( $rates, $default_service );
+			if ( ! empty( $default_rate ) ) {
+				return $default_rate;
+			}
+		}
+
+		return $this->cheapest_rate( $rates );
+	}
+
+	/**
 	 * Builds the printable label URL.
 	 */
 	private function print_url( WC_Order $order ): string {
@@ -756,12 +983,112 @@ final class WLP_Admin {
 	 * @return array<int, int>
 	 */
 	private function request_order_ids(): array {
+		// Nonce verification happens in the public action before this parser is called.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$value = isset( $_GET['order_ids'] ) ? sanitize_text_field( wp_unslash( $_GET['order_ids'] ) ) : '';
 		$ids   = array_map( 'absint', explode( ',', $value ) );
 		$ids   = array_values( array_unique( array_filter( $ids ) ) );
 		sort( $ids, SORT_NUMERIC );
 
 		return $ids;
+	}
+
+	/**
+	 * Returns a fake Canadian order address suitable for Canada Post sandbox testing.
+	 *
+	 * @return array<string, string>
+	 */
+	private function dummy_order_address(): array {
+		$addresses = array(
+			array( 'Researcher', 'A', 'Test Lab East', '123 Test Lab Rd', 'Ottawa', 'ON', 'K1A 0B1', '6135550100' ),
+			array( 'Researcher', 'B', 'Test Lab West', '456 Sample Ave', 'Toronto', 'ON', 'M5V 3L9', '4165550101' ),
+			array( 'Researcher', 'C', 'Test Lab North', '789 Control St', 'Montreal', 'QC', 'H2Y 1C6', '5145550102' ),
+			array( 'Researcher', 'D', 'Test Lab South', '321 Assay Blvd', 'Calgary', 'AB', 'T2P 1J9', '4035550103' ),
+			array( 'Researcher', 'E', 'Test Lab Central', '654 Reference Way', 'Vancouver', 'BC', 'V6B 1A1', '6045550104' ),
+		);
+		$selected  = $addresses[ random_int( 0, count( $addresses ) - 1 ) ];
+
+		return array(
+			'first_name' => $selected[0],
+			'last_name'  => $selected[1],
+			'company'    => $selected[2],
+			'email'      => 'lab@example.com',
+			'phone'      => $selected[7],
+			'address_1'  => $selected[3],
+			'address_2'  => '',
+			'city'       => $selected[4],
+			'state'      => $selected[5],
+			'postcode'   => $selected[6],
+			'country'    => 'CA',
+		);
+	}
+
+	/**
+	 * Creates or reuses hidden weighted products for randomized dummy orders.
+	 *
+	 * @return array<int, WC_Product>
+	 */
+	private function dummy_products(): array {
+		if ( ! class_exists( 'WC_Product_Simple' ) || ! function_exists( 'wc_get_product' ) || ! function_exists( 'wc_get_product_id_by_sku' ) ) {
+			throw new RuntimeException( esc_html__( 'WooCommerce product creation is unavailable.', 'woo-logistics-plugin' ) );
+		}
+
+		$products = array();
+		$names    = array(
+			'Reference Sample A',
+			'Reference Sample B',
+			'Control Sample C',
+			'Assay Sample D',
+			'Stability Sample E',
+		);
+
+		foreach ( $names as $index => $name ) {
+			$sku        = 'wlp-test-' . $this->dummy_product_weight_grams_label() . 'g-' . ( $index + 1 );
+			$product_id = wc_get_product_id_by_sku( $sku );
+			$product    = $product_id ? wc_get_product( $product_id ) : null;
+
+			if ( ! $product instanceof WC_Product_Simple ) {
+				$product = new WC_Product_Simple();
+				$product->set_sku( $sku );
+			}
+
+			$product->set_name( $name . ' - ' . $this->dummy_product_weight_grams_label() . ' g' );
+			$product->set_status( 'publish' );
+			$product->set_catalog_visibility( 'hidden' );
+			$product->set_virtual( false );
+			$product->set_description( __( 'For laboratory research use only.', 'woo-logistics-plugin' ) );
+			$product->set_regular_price( '12.00' );
+			$product->set_price( '12.00' );
+			$product->set_weight( $this->dummy_product_weight_for_store_unit() );
+			$product->update_meta_data( '_wlp_dummy_product', 'yes' );
+			$product->save();
+			$products[] = $product;
+		}
+
+		return $products;
+	}
+
+	/**
+	 * Converts the fixed dummy product weight into the store's weight unit.
+	 */
+	private function dummy_product_weight_for_store_unit(): string {
+		$grams = self::DUMMY_PRODUCT_WEIGHT_GRAMS;
+		$unit  = strtolower( (string) get_option( 'woocommerce_weight_unit', 'kg' ) );
+		$value = match ( $unit ) {
+			'g'   => $grams,
+			'lbs' => $grams * 0.00220462262185,
+			'oz'  => $grams * 0.0352739619496,
+			default => $grams / 1000,
+		};
+
+		return rtrim( rtrim( number_format( $value, 6, '.', '' ), '0' ), '.' );
+	}
+
+	/**
+	 * Formats the dummy product gram weight without unnecessary decimals.
+	 */
+	private function dummy_product_weight_grams_label(): string {
+		return rtrim( rtrim( number_format( self::DUMMY_PRODUCT_WEIGHT_GRAMS, 3, '.', '' ), '0' ), '.' );
 	}
 
 	/**

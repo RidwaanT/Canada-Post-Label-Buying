@@ -28,6 +28,7 @@ final class WLP_Meta_Keys {
 	public const SHIPPED_AT             = '_wlp_shipped_at';
 	public const DELIVERED_AT           = '_wlp_delivered_at';
 	public const PRESET_ID              = '_wlp_preset_id';
+	public const SHIPMENT_WEIGHT_KG     = '_wlp_shipment_weight_kg';
 
 	public const LEGACY_MEDUSA_KEYS = array(
 		'label_created_at'       => '_medusa_logistics_label_created_at',

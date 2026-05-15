@@ -79,7 +79,7 @@ final class WLP_Label_Normalizer {
 	 */
 	public static function merge_pdfs( array $bodies ): string {
 		if ( ! class_exists( Fpdi::class ) || ! class_exists( StreamReader::class ) ) {
-			throw new RuntimeException( __( 'PDF merging is unavailable because FPDI is not loaded.', 'woo-logistics-plugin' ) );
+			throw new RuntimeException( esc_html__( 'PDF merging is unavailable because FPDI is not loaded.', 'woo-logistics-plugin' ) );
 		}
 
 		$output = new Fpdi();
@@ -87,10 +87,10 @@ final class WLP_Label_Normalizer {
 		$output->SetAutoPageBreak( false, 0 );
 
 		foreach ( $bodies as $body ) {
-			$source    = StreamReader::createByString( $body );
-			$pageCount = $output->setSourceFile( $source );
+			$source     = StreamReader::createByString( $body );
+			$page_count = $output->setSourceFile( $source );
 
-			for ( $page = 1; $page <= $pageCount; $page++ ) {
+			for ( $page = 1; $page <= $page_count; $page++ ) {
 				$template = $output->importPage( $page );
 				$size     = $output->getTemplateSize( $template );
 				$width    = (float) ( $size['width'] ?? self::THERMAL_WIDTH_MM );

@@ -36,6 +36,7 @@ final class WLP_Order_Logistics {
 			'shipped_at'             => self::string_meta( $order, WLP_Meta_Keys::SHIPPED_AT, 'shipped_at' ),
 			'delivered_at'           => self::string_meta( $order, WLP_Meta_Keys::DELIVERED_AT, 'delivered_at' ),
 			'preset_id'              => self::string_meta( $order, WLP_Meta_Keys::PRESET_ID ),
+			'shipment_weight_kg'     => self::string_meta( $order, WLP_Meta_Keys::SHIPMENT_WEIGHT_KG ),
 		);
 	}
 
@@ -58,6 +59,7 @@ final class WLP_Order_Logistics {
 			'shipment_id'            => WLP_Meta_Keys::SHIPMENT_ID,
 			'expected_delivery_date' => WLP_Meta_Keys::EXPECTED_DELIVERY_DATE,
 			'preset_id'              => WLP_Meta_Keys::PRESET_ID,
+			'shipment_weight_kg'     => WLP_Meta_Keys::SHIPMENT_WEIGHT_KG,
 			'shipped_at'             => WLP_Meta_Keys::SHIPPED_AT,
 		);
 

@@ -12,7 +12,7 @@ Adds a WooCommerce logistics desk for Canada Post label creation, printing, and 
 
 == Description ==
 
-Woo Logistics Plugin provides a WooCommerce admin logistics desk for Canadian domestic Canada Post shipments. It supports rate lookup, label purchase, duplicate-label protection, reprinting, editable package presets, HPOS compatibility, and plugin-owned order metadata.
+Woo Logistics Plugin provides a WooCommerce admin logistics desk for Canadian domestic Canada Post shipments. It supports rate lookup, label purchase, configurable quick-buy service defaults, duplicate-label protection, reprinting, editable package presets, optional product-weight calculation with base package weight, HPOS compatibility, and plugin-owned order metadata.
 
 == Installation ==
 

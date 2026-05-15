@@ -139,6 +139,13 @@
   top: 12px;
 }
 
+.wlp-drawer-option {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin: 8px 0 16px;
+}
+
 .wlp-rate-group {
   border: 1px solid #dcdcde;
   border-radius: 6px;

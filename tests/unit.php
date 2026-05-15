@@ -300,6 +300,11 @@ $signed_rate_document = new SimpleXMLElement($signed_rate_xml);
 $signed_option_codes = $signed_rate_document->xpath('//*[local-name()="option-code"]') ?: array();
 wlp_assert(1 === count($signed_option_codes) && 'SO' === (string) $signed_option_codes[0], 'Expected rate XML to include Canada Post signature option SO.');
 
+$unsigned_override_xml     = (string) $rate_xml_method->invoke($client, $weight_order, 'K1A0B1', array('weight' => 0.5, 'length' => 12, 'width' => 11, 'height' => 6), false);
+$unsigned_override_document = new SimpleXMLElement($unsigned_override_xml);
+$unsigned_override_codes    = $unsigned_override_document->xpath('//*[local-name()="option-code"]') ?: array();
+wlp_assert(0 === count($unsigned_override_codes), 'Expected per-request signature override to disable global signature setting.');
+
 if ($failures) {
 	foreach ($failures as $failure) {
 		fwrite(STDERR, 'FAIL: ' . $failure . PHP_EOL);

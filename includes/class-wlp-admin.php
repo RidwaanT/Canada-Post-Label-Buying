@@ -81,30 +81,32 @@ final class WLP_Admin {
 			'wlp-admin',
 			'wlpAdmin',
 			array(
-				'ajaxUrl'        => admin_url( 'admin-ajax.php' ),
-				'nonce'          => wp_create_nonce( 'wlp_logistics' ),
-				'settingsUrl'    => admin_url( 'admin.php?page=wlp-logistics-settings' ),
-				'bulkPrintUrl'   => admin_url( 'admin-post.php?action=wlp_bulk_print_labels' ),
-				'bulkPrintNonce' => wp_create_nonce( 'wlp_bulk_print_labels' ),
-				'i18n'           => array(
-					'loadingRates'  => __( 'Loading Canada Post rates...', 'woo-logistics-plugin' ),
-					'buying'        => __( 'Buying...', 'woo-logistics-plugin' ),
-					'buyLabel'      => __( 'Buy label', 'woo-logistics-plugin' ),
-					'failedRates'   => __( 'Failed to load rates.', 'woo-logistics-plugin' ),
-					'failedLabel'   => __( 'Failed to create label.', 'woo-logistics-plugin' ),
-					'reprint'       => __( 'Reprint existing label', 'woo-logistics-plugin' ),
-					'buyOverride'   => __( 'Buy replacement label', 'woo-logistics-plugin' ),
-					'tracking'      => __( 'Tracking', 'woo-logistics-plugin' ),
-					'printLabel'    => __( 'Print label', 'woo-logistics-plugin' ),
-					'confirm'       => __( 'This order already has a label. Buy a replacement label anyway?', 'woo-logistics-plugin' ),
-					'quickBuying'   => __( 'Buying quick labels...', 'woo-logistics-plugin' ),
-					'quickDone'     => __( 'Quick buy complete.', 'woo-logistics-plugin' ),
-					'selectOrders'  => __( 'Select at least one order.', 'woo-logistics-plugin' ),
-					'popupNotice'   => __( 'Allow popups for this site to bulk print labels.', 'woo-logistics-plugin' ),
-					'creatingDummy' => __( 'Creating test order...', 'woo-logistics-plugin' ),
-					'dummyCreated'  => __( 'Test order created. Reloading...', 'woo-logistics-plugin' ),
-					'dummyFailed'   => __( 'Failed to create test order.', 'woo-logistics-plugin' ),
+				'ajaxUrl'           => admin_url( 'admin-ajax.php' ),
+				'nonce'             => wp_create_nonce( 'wlp_logistics' ),
+				'settingsUrl'       => admin_url( 'admin.php?page=wlp-logistics-settings' ),
+				'bulkPrintUrl'      => admin_url( 'admin-post.php?action=wlp_bulk_print_labels' ),
+				'bulkPrintNonce'    => wp_create_nonce( 'wlp_bulk_print_labels' ),
+				'i18n'              => array(
+					'loadingRates'     => __( 'Loading Canada Post rates...', 'woo-logistics-plugin' ),
+					'buying'           => __( 'Buying...', 'woo-logistics-plugin' ),
+					'buyLabel'         => __( 'Buy label', 'woo-logistics-plugin' ),
+					'failedRates'      => __( 'Failed to load rates.', 'woo-logistics-plugin' ),
+					'failedLabel'      => __( 'Failed to create label.', 'woo-logistics-plugin' ),
+					'reprint'          => __( 'Reprint existing label', 'woo-logistics-plugin' ),
+					'buyOverride'      => __( 'Buy replacement label', 'woo-logistics-plugin' ),
+					'tracking'         => __( 'Tracking', 'woo-logistics-plugin' ),
+					'printLabel'       => __( 'Print label', 'woo-logistics-plugin' ),
+					'confirm'          => __( 'This order already has a label. Buy a replacement label anyway?', 'woo-logistics-plugin' ),
+					'quickBuying'      => __( 'Buying quick labels...', 'woo-logistics-plugin' ),
+					'quickDone'        => __( 'Quick buy complete.', 'woo-logistics-plugin' ),
+					'selectOrders'     => __( 'Select at least one order.', 'woo-logistics-plugin' ),
+					'popupNotice'      => __( 'Allow popups for this site to bulk print labels.', 'woo-logistics-plugin' ),
+					'creatingDummy'    => __( 'Creating test order...', 'woo-logistics-plugin' ),
+					'dummyCreated'     => __( 'Test order created. Reloading...', 'woo-logistics-plugin' ),
+					'dummyFailed'      => __( 'Failed to create test order.', 'woo-logistics-plugin' ),
+					'requireSignature' => __( 'Require signature', 'woo-logistics-plugin' ),
 				),
+				'signatureRequired' => WLP_Settings::signature_required() ? 'yes' : 'no',
 			)
 		);
 	}
@@ -272,14 +274,15 @@ final class WLP_Admin {
 	 * AJAX: fetches rates for each preset.
 	 */
 	public function ajax_get_rates(): void {
-		$order   = $this->ajax_order();
-		$payload = array();
+		$order              = $this->ajax_order();
+		$signature_required = $this->ajax_signature_required();
+		$payload            = array();
 
 		foreach ( $this->client->get_presets() as $preset ) {
 			try {
 				$payload[] = array(
 					'preset' => $preset,
-					'rates'  => $this->client->get_rates( $order, $preset ),
+					'rates'  => $this->client->get_rates( $order, $preset, $signature_required ),
 				);
 			} catch ( Throwable $error ) {
 				$payload[] = array(
@@ -292,11 +295,12 @@ final class WLP_Admin {
 
 		wp_send_json_success(
 			array(
-				'orderId'  => $order->get_id(),
-				'hasLabel' => WLP_Order_Logistics::has_label( $order ),
-				'printUrl' => $this->print_url( $order ),
-				'services' => $this->client->get_services(),
-				'presets'  => $payload,
+				'orderId'           => $order->get_id(),
+				'hasLabel'          => WLP_Order_Logistics::has_label( $order ),
+				'printUrl'          => $this->print_url( $order ),
+				'services'          => $this->client->get_services(),
+				'presets'           => $payload,
+				'signatureRequired' => $signature_required ? 'yes' : 'no',
 			)
 		);
 	}
@@ -305,10 +309,11 @@ final class WLP_Admin {
 	 * AJAX: creates a Canada Post label for the selected order.
 	 */
 	public function ajax_create_label(): void {
-		$order        = $this->ajax_order();
-		$preset_id    = isset( $_POST['presetId'] ) ? sanitize_text_field( wp_unslash( $_POST['presetId'] ) ) : '';
-		$service_code = isset( $_POST['serviceCode'] ) ? sanitize_text_field( wp_unslash( $_POST['serviceCode'] ) ) : '';
-		$override     = isset( $_POST['override'] ) && 'yes' === sanitize_text_field( wp_unslash( $_POST['override'] ) );
+		$order              = $this->ajax_order();
+		$preset_id          = isset( $_POST['presetId'] ) ? sanitize_text_field( wp_unslash( $_POST['presetId'] ) ) : '';
+		$service_code       = isset( $_POST['serviceCode'] ) ? sanitize_text_field( wp_unslash( $_POST['serviceCode'] ) ) : '';
+		$override           = isset( $_POST['override'] ) && 'yes' === sanitize_text_field( wp_unslash( $_POST['override'] ) );
+		$signature_required = $this->ajax_signature_required();
 
 		if ( '' === $preset_id || '' === $service_code ) {
 			wp_send_json_error( array( 'message' => __( 'Package preset and service are required.', 'woo-logistics-plugin' ) ), 400 );
@@ -327,7 +332,7 @@ final class WLP_Admin {
 
 		try {
 			$preset        = $this->client->find_preset( $preset_id );
-			$rates         = $this->client->get_rates( $order, $preset );
+			$rates         = $this->client->get_rates( $order, $preset, $signature_required );
 			$selected_rate = $this->find_rate( $rates, $service_code );
 
 			if ( empty( $selected_rate ) ) {
@@ -335,7 +340,7 @@ final class WLP_Admin {
 			}
 
 			$shipment_weight = $this->client->shipment_weight( $order, $preset );
-			$shipment        = $this->client->create_shipment( $order, $preset, $service_code );
+			$shipment        = $this->client->create_shipment( $order, $preset, $service_code, $signature_required );
 
 			WLP_Order_Logistics::write_label(
 				$order,
@@ -891,6 +896,19 @@ final class WLP_Admin {
 		}
 
 		return $order;
+	}
+
+	/**
+	 * Reads the per-request signature override sent by the label drawer.
+	 */
+	private function ajax_signature_required(): bool {
+		$value = isset( $_POST['signatureRequired'] ) ? sanitize_text_field( wp_unslash( $_POST['signatureRequired'] ) ) : '';
+
+		if ( '' === $value ) {
+			return WLP_Settings::signature_required();
+		}
+
+		return 'yes' === $value;
 	}
 
 	/**

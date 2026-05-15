@@ -131,7 +131,48 @@
     `;
   };
 
-  const renderRates = (orderId, payload) => {
+  const signatureEnabled = () => {
+    const checkbox = content.querySelector('[data-wlp-signature-required]');
+    if (checkbox) {
+      return checkbox.checked;
+    }
+
+    return wlpAdmin.signatureRequired === 'yes';
+  };
+
+  const renderSignatureControl = (orderId, checked) => `
+    <label class="wlp-drawer-option">
+      <input type="checkbox" data-wlp-signature-required data-order-id="${escapeHtml(orderId)}" ${checked ? 'checked' : ''}>
+      <span>${escapeHtml(text.requireSignature || 'Require signature')}</span>
+    </label>
+  `;
+
+  const loadRates = async (orderId, signatureRequired = signatureEnabled()) => {
+    content.innerHTML = `
+      ${renderSignatureControl(orderId, signatureRequired)}
+      <p>${escapeHtml(text.loadingRates || 'Loading Canada Post rates...')}</p>
+    `;
+
+    const result = await post('wlp_get_rates', {
+      orderId,
+      signatureRequired: signatureRequired ? 'yes' : 'no',
+    });
+    if (!result.success) {
+      content.innerHTML = `
+        ${renderSignatureControl(orderId, signatureRequired)}
+        ${renderError(result.data && result.data.message ? result.data.message : (text.failedRates || 'Failed to load rates.'))}
+      `;
+      return;
+    }
+
+    if (result.data.hasLabel) {
+      result.data.message = result.data.message || 'This order already has a label. Reprint it or buy a replacement.';
+    }
+
+    renderRates(orderId, result.data, signatureRequired);
+  };
+
+  const renderRates = (orderId, payload, signatureRequired = signatureEnabled()) => {
     const groups = payload.presets.map((entry) => {
       const rates = entry.rates.length
         ? entry.rates.map((rate) => `
@@ -153,7 +194,7 @@
       `;
     }).join('');
 
-    content.innerHTML = `${renderExistingLabel(payload)}${groups}`;
+    content.innerHTML = `${renderSignatureControl(orderId, signatureRequired)}${renderExistingLabel(payload)}${groups}`;
   };
 
   document.addEventListener('click', async (event) => {
@@ -192,20 +233,8 @@
     const createButton = event.target.closest('[data-wlp-create-label]');
     if (createButton) {
       const orderId = createButton.getAttribute('data-order-id');
-      content.innerHTML = `<p>${escapeHtml(text.loadingRates || 'Loading Canada Post rates...')}</p>`;
       openDrawer();
-
-      const result = await post('wlp_get_rates', { orderId });
-      if (!result.success) {
-        content.innerHTML = renderError(result.data && result.data.message ? result.data.message : (text.failedRates || 'Failed to load rates.'));
-        return;
-      }
-
-      if (result.data.hasLabel) {
-        result.data.message = result.data.message || 'This order already has a label. Reprint it or buy a replacement.';
-      }
-
-      renderRates(orderId, result.data);
+      await loadRates(orderId, wlpAdmin.signatureRequired === 'yes');
       return;
     }
 
@@ -224,6 +253,7 @@
         presetId: buyButton.getAttribute('data-preset-id'),
         serviceCode: buyButton.getAttribute('data-service-code'),
         override: hasLabel ? 'yes' : 'no',
+        signatureRequired: signatureEnabled() ? 'yes' : 'no',
       });
 
       if (!result.success) {
@@ -349,9 +379,14 @@
     }
   });
 
-  document.addEventListener('change', (event) => {
+  document.addEventListener('change', async (event) => {
     if (event.target.closest('[data-wlp-order-select]')) {
       updateSelectionCount();
+    }
+
+    const signatureToggle = event.target.closest('[data-wlp-signature-required]');
+    if (signatureToggle) {
+      await loadRates(signatureToggle.getAttribute('data-order-id'), signatureToggle.checked);
     }
   });
 

@@ -8,6 +8,7 @@ Standalone WooCommerce plugin for a logistics desk focused on Canada Post label 
 - Canada Post settings page.
 - Fetch Canada Post rates by package preset.
 - Configurable default Canada Post service for quick buy.
+- Optional Canada Post signature-required labels.
 - Optional shipment weight calculation from WooCommerce product weights, with an optional base package weight.
 - Create Canada Post non-contract shipments.
 - Store label, tracking, shipment, service, and print metadata on Woo orders.

@@ -186,6 +186,9 @@ $wlp_test_options = array(
 	WLP_Settings::OPTION_BASE_WEIGHT    => '0.05',
 	WLP_Settings::OPTION_DEFAULT_SERVICE => 'DOM.XP',
 	WLP_Settings::OPTION_HIDE_REGULAR   => 'no',
+	WLP_Settings::OPTION_SIGNATURE      => 'no',
+	WLP_Settings::OPTION_CUSTOMER       => '1234567',
+	WLP_Settings::OPTION_ORIGIN_POSTAL  => 'M5V3L9',
 	'woocommerce_weight_unit'           => 'lbs',
 );
 
@@ -218,6 +221,7 @@ wlp_assert('DOM.XP' === WLP_Settings::sanitize_service_code('dom.xp'), 'Expected
 wlp_assert('' === WLP_Settings::sanitize_service_code('DOM.BAD'), 'Expected invalid service code to be rejected.');
 wlp_assert('DOM.XP' === WLP_Settings::default_service_code(), 'Expected default service option readback.');
 wlp_assert(array('', 'DOM.RP', 'DOM.XP', 'DOM.EP', 'DOM.PC') === array_keys(WLP_Settings::service_options()), 'Expected service options in label display order.');
+wlp_assert(! WLP_Settings::signature_required(), 'Expected signature option to default off.');
 wlp_assert('0' === WLP_Settings::sanitize_non_negative_float('0'), 'Expected zero base weight to be accepted.');
 wlp_assert('' === WLP_Settings::sanitize_non_negative_float('-0.01'), 'Expected negative base weight to be rejected.');
 
@@ -282,6 +286,19 @@ wlp_assert(array('', 'DOM.XP', 'DOM.EP', 'DOM.PC') === array_keys(WLP_Settings::
 wlp_assert('' === WLP_Settings::default_service_code(), 'Expected hidden Regular Parcel default to fall back to cheapest.');
 $filtered_rates = $filter_method->invoke($client, $rates);
 wlp_assert(array('DOM.XP', 'DOM.EP', 'DOM.PC') === array_column($filtered_rates, 'service_code'), 'Expected Regular Parcel hidden from rates.');
+
+$rate_xml_method = new ReflectionMethod(WLP_Canada_Post_Client::class, 'build_rate_xml');
+$rate_xml        = (string) $rate_xml_method->invoke($client, $weight_order, 'K1A0B1', array('weight' => 0.5, 'length' => 12, 'width' => 11, 'height' => 6));
+$rate_document   = new SimpleXMLElement($rate_xml);
+$option_codes    = $rate_document->xpath('//*[local-name()="option-code"]') ?: array();
+wlp_assert(0 === count($option_codes), 'Expected rate XML to omit signature when disabled.');
+
+$wlp_test_options[WLP_Settings::OPTION_SIGNATURE] = 'yes';
+wlp_assert(WLP_Settings::signature_required(), 'Expected signature option readback.');
+$signed_rate_xml     = (string) $rate_xml_method->invoke($client, $weight_order, 'K1A0B1', array('weight' => 0.5, 'length' => 12, 'width' => 11, 'height' => 6));
+$signed_rate_document = new SimpleXMLElement($signed_rate_xml);
+$signed_option_codes = $signed_rate_document->xpath('//*[local-name()="option-code"]') ?: array();
+wlp_assert(1 === count($signed_option_codes) && 'SO' === (string) $signed_option_codes[0], 'Expected rate XML to include Canada Post signature option SO.');
 
 if ($failures) {
 	foreach ($failures as $failure) {

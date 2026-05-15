@@ -191,6 +191,7 @@ final class WLP_Admin {
 					<?php $this->field_password( WLP_Settings::OPTION_API_PASSWORD, __( 'API password', 'woo-logistics-plugin' ) ); ?>
 					<?php $this->field_text( WLP_Settings::OPTION_CUSTOMER, __( 'Customer number', 'woo-logistics-plugin' ) ); ?>
 					<?php $this->field_checkbox( WLP_Settings::OPTION_NOTIFY, __( 'Send Canada Post customer notifications', 'woo-logistics-plugin' ), 'yes' ); ?>
+					<?php $this->field_checkbox( WLP_Settings::OPTION_SIGNATURE, __( 'Require signature on Canada Post labels', 'woo-logistics-plugin' ), 'no', __( 'When enabled, rates and purchased labels include Canada Post option SO - Signature. Priority may include this at no extra charge; other services may price it as an option.', 'woo-logistics-plugin' ) ); ?>
 					<?php $this->field_service_select( WLP_Settings::OPTION_DEFAULT_SERVICE, __( 'Default service for quick buy', 'woo-logistics-plugin' ), __( 'Quick buy uses this service when Canada Post returns it. If it is unavailable for an order, quick buy falls back to the cheapest returned rate.', 'woo-logistics-plugin' ) ); ?>
 					<?php $this->field_checkbox( WLP_Settings::OPTION_HIDE_REGULAR, __( 'Remove Regular Parcel as a label option', 'woo-logistics-plugin' ), 'no', __( 'When enabled, Regular Parcel is hidden from create-label choices and quick buy will not select it.', 'woo-logistics-plugin' ) ); ?>
 				</table>

@@ -239,6 +239,7 @@ final class WLP_Canada_Post_Client {
 		$dimensions->addChild( 'length', (string) $preset['length'] );
 		$dimensions->addChild( 'width', (string) $preset['width'] );
 		$dimensions->addChild( 'height', (string) $preset['height'] );
+		$this->add_signature_option( $xml );
 		$xml->addChild( 'origin-postal-code', $this->normalize_postal_code( $this->required_option( WLP_Settings::OPTION_ORIGIN_POSTAL, __( 'Origin postal code', 'woo-logistics-plugin' ) ) ) );
 		$destination = $xml->addChild( 'destination' );
 		$domestic    = $destination->addChild( 'domestic' );
@@ -320,10 +321,25 @@ final class WLP_Canada_Post_Client {
 		$dimensions->addChild( 'width', (string) $preset['width'] );
 		$dimensions->addChild( 'height', (string) $preset['height'] );
 
+		$this->add_signature_option( $delivery );
+
 		$preferences = $delivery->addChild( 'preferences' );
 		$preferences->addChild( 'show-packing-instructions', 'true' );
 
 		return (string) $xml->asXML();
+	}
+
+	/**
+	 * Adds Canada Post Signature option when enabled.
+	 */
+	private function add_signature_option( SimpleXMLElement $xml_parent ): void {
+		if ( 'yes' !== $this->option( WLP_Settings::OPTION_SIGNATURE ) ) {
+			return;
+		}
+
+		$options = $xml_parent->addChild( 'options' );
+		$option  = $options->addChild( 'option' );
+		$option->addChild( 'option-code', 'SO' );
 	}
 
 	/**
@@ -499,6 +515,7 @@ final class WLP_Canada_Post_Client {
 			WLP_Settings::OPTION_ORIGIN_CITY    => array( 'WLP_CP_ORIGIN_CITY' ),
 			WLP_Settings::OPTION_ORIGIN_PROV    => array( 'WLP_CP_ORIGIN_PROVINCE' ),
 			WLP_Settings::OPTION_ORIGIN_POSTAL  => array( 'WLP_CP_ORIGIN_POSTAL_CODE', 'CP_ORIGIN_POSTAL_CODE' ),
+			WLP_Settings::OPTION_SIGNATURE      => array( 'WLP_CP_SIGNATURE_REQUIRED' ),
 		);
 
 		foreach ( $fallbacks[ $option ] ?? array() as $env_name ) {

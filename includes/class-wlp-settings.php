@@ -36,6 +36,7 @@ final class WLP_Settings {
 	public const OPTION_USE_BASE_WEIGHT = 'wlp_use_base_package_weight';
 	public const OPTION_DEFAULT_SERVICE = 'wlp_default_service_code';
 	public const OPTION_HIDE_REGULAR    = 'wlp_hide_regular_parcel';
+	public const OPTION_SIGNATURE       = 'wlp_cp_signature_required';
 
 	/**
 	 * Registers settings.
@@ -62,6 +63,7 @@ final class WLP_Settings {
 		register_setting( 'wlp_settings', self::OPTION_BASE_WEIGHT, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_non_negative_float' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_DEFAULT_SERVICE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_service_code' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_HIDE_REGULAR, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_SIGNATURE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_PRESETS, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_presets' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_STATUSES, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_statuses' ) ) );
 	}
@@ -172,6 +174,13 @@ final class WLP_Settings {
 	 */
 	public static function hide_regular_parcel(): bool {
 		return 'yes' === get_option( self::OPTION_HIDE_REGULAR, 'no' );
+	}
+
+	/**
+	 * Returns true when Canada Post shipments should require signature.
+	 */
+	public static function signature_required(): bool {
+		return 'yes' === get_option( self::OPTION_SIGNATURE, 'no' );
 	}
 
 	/**

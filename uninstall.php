@@ -26,8 +26,14 @@ $options = array(
 	'wlp_cp_origin_province',
 	'wlp_cp_origin_postal_code',
 	'wlp_cp_customer_notifications',
+	'wlp_cp_signature_required',
 	'wlp_package_presets',
 	'wlp_eligible_statuses',
+	'wlp_calculate_product_weight',
+	'wlp_base_package_weight_kg',
+	'wlp_use_base_package_weight',
+	'wlp_default_service_code',
+	'wlp_hide_regular_parcel',
 );
 
 foreach ( $options as $option ) {

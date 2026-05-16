@@ -280,6 +280,27 @@ $rates         = $filter_method->invoke(
 );
 wlp_assert(array('DOM.RP', 'DOM.EP', 'DOM.XP', 'DOM.PC') === array_column($rates, 'service_code'), 'Expected rates sorted by service display order.');
 
+$parse_rates_method = new ReflectionMethod(WLP_Canada_Post_Client::class, 'parse_rates');
+$parsed_rates       = $parse_rates_method->invoke(
+	$client,
+	'<?xml version="1.0" encoding="UTF-8"?>
+	<price-quotes>
+		<price-quote>
+			<service-code>DOM.EP</service-code>
+			<service-name>Expedited Parcel</service-name>
+			<price-details>
+				<due>20.00</due>
+			</price-details>
+			<service-standard>
+				<expected-transit-time>3</expected-transit-time>
+				<expected-delivery-date>2026-05-20</expected-delivery-date>
+			</service-standard>
+		</price-quote>
+	</price-quotes>'
+);
+wlp_assert('2026-05-20' === ($parsed_rates[0]['expected_delivery_date'] ?? ''), 'Expected delivery date parsed from Canada Post rates.');
+wlp_assert('3' === ($parsed_rates[0]['expected_transit_time'] ?? ''), 'Expected transit time parsed from Canada Post rates.');
+
 $wlp_test_options[WLP_Settings::OPTION_HIDE_REGULAR]    = 'yes';
 $wlp_test_options[WLP_Settings::OPTION_DEFAULT_SERVICE] = 'DOM.RP';
 wlp_assert(array('', 'DOM.EP', 'DOM.XP', 'DOM.PC') === array_keys(WLP_Settings::service_options()), 'Expected Regular Parcel hidden from service options.');

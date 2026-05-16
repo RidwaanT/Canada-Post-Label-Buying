@@ -345,18 +345,19 @@ final class WLP_Admin {
 			WLP_Order_Logistics::write_label(
 				$order,
 				array(
-					'label_created_at'   => gmdate( 'c' ),
-					'label_artifact_url' => $shipment['label_artifact_url'],
-					'tracking_number'    => $shipment['tracking_number'],
-					'tracking_url'       => $shipment['tracking_url'],
-					'service_code'       => $service_code,
-					'service_name'       => $this->client->service_name( $service_code ),
-					'shipping_cost'      => $selected_rate['due'] ?? '',
-					'shipping_currency'  => 'CAD',
-					'shipment_id'        => $shipment['shipment_id'],
-					'preset_id'          => $preset_id,
-					'shipment_weight_kg' => $shipment_weight,
-					'shipped_at'         => 'completed' === $order->get_status() ? gmdate( 'c' ) : null,
+					'label_created_at'       => gmdate( 'c' ),
+					'label_artifact_url'     => $shipment['label_artifact_url'],
+					'tracking_number'        => $shipment['tracking_number'],
+					'tracking_url'           => $shipment['tracking_url'],
+					'service_code'           => $service_code,
+					'service_name'           => $this->client->service_name( $service_code ),
+					'shipping_cost'          => $selected_rate['due'] ?? '',
+					'shipping_currency'      => 'CAD',
+					'shipment_id'            => $shipment['shipment_id'],
+					'expected_delivery_date' => $selected_rate['expected_delivery_date'] ?? '',
+					'preset_id'              => $preset_id,
+					'shipment_weight_kg'     => $shipment_weight,
+					'shipped_at'             => 'completed' === $order->get_status() ? gmdate( 'c' ) : null,
 				)
 			);
 
@@ -365,6 +366,7 @@ final class WLP_Admin {
 					'shipment' => $shipment,
 					'printUrl' => $this->print_url( $order ),
 					'package'  => $this->label_package_payload( $preset ),
+					'rate'     => $selected_rate,
 				)
 			);
 		} catch ( Throwable $error ) {
@@ -410,18 +412,19 @@ final class WLP_Admin {
 			WLP_Order_Logistics::write_label(
 				$order,
 				array(
-					'label_created_at'   => gmdate( 'c' ),
-					'label_artifact_url' => $shipment['label_artifact_url'],
-					'tracking_number'    => $shipment['tracking_number'],
-					'tracking_url'       => $shipment['tracking_url'],
-					'service_code'       => $service_code,
-					'service_name'       => $this->client->service_name( $service_code ),
-					'shipping_cost'      => $rate['due'] ?? '',
-					'shipping_currency'  => 'CAD',
-					'shipment_id'        => $shipment['shipment_id'],
-					'preset_id'          => (string) $preset['id'],
-					'shipment_weight_kg' => $shipment_weight,
-					'shipped_at'         => 'completed' === $order->get_status() ? gmdate( 'c' ) : null,
+					'label_created_at'       => gmdate( 'c' ),
+					'label_artifact_url'     => $shipment['label_artifact_url'],
+					'tracking_number'        => $shipment['tracking_number'],
+					'tracking_url'           => $shipment['tracking_url'],
+					'service_code'           => $service_code,
+					'service_name'           => $this->client->service_name( $service_code ),
+					'shipping_cost'          => $rate['due'] ?? '',
+					'shipping_currency'      => 'CAD',
+					'shipment_id'            => $shipment['shipment_id'],
+					'expected_delivery_date' => $rate['expected_delivery_date'] ?? '',
+					'preset_id'              => (string) $preset['id'],
+					'shipment_weight_kg'     => $shipment_weight,
+					'shipped_at'             => 'completed' === $order->get_status() ? gmdate( 'c' ) : null,
 				)
 			);
 
@@ -430,6 +433,7 @@ final class WLP_Admin {
 					'shipment' => $shipment,
 					'printUrl' => $this->print_url( $order ),
 					'package'  => $this->label_package_payload( $preset ),
+					'rate'     => $rate,
 				)
 			);
 		} catch ( Throwable $error ) {

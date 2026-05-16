@@ -356,9 +356,11 @@ final class WLP_Canada_Post_Client {
 
 		foreach ( $quotes as $quote ) {
 			$rates[] = array(
-				'service_code' => (string) ( $quote->xpath( './*[local-name()="service-code"]' )[0] ?? '' ),
-				'service_name' => (string) ( $quote->xpath( './*[local-name()="service-name"]' )[0] ?? '' ),
-				'due'          => (string) ( $quote->xpath( './/*[local-name()="due"]' )[0] ?? '' ),
+				'service_code'           => (string) ( $quote->xpath( './*[local-name()="service-code"]' )[0] ?? '' ),
+				'service_name'           => (string) ( $quote->xpath( './*[local-name()="service-name"]' )[0] ?? '' ),
+				'due'                    => (string) ( $quote->xpath( './/*[local-name()="due"]' )[0] ?? '' ),
+				'expected_delivery_date' => (string) ( $quote->xpath( './/*[local-name()="service-standard"]/*[local-name()="expected-delivery-date"]' )[0] ?? '' ),
+				'expected_transit_time'  => (string) ( $quote->xpath( './/*[local-name()="service-standard"]/*[local-name()="expected-transit-time"]' )[0] ?? '' ),
 			);
 		}
 

@@ -63,7 +63,11 @@ $rates = parse_rates($response['body']);
 echo 'Rates returned: ' . count($rates) . PHP_EOL;
 
 foreach ($rates as $rate) {
-    echo '- ' . $rate['service_code'] . ' ' . $rate['service_name'] . ' ' . $rate['due'] . PHP_EOL;
+    $delivery = '';
+    if ($rate['expected_delivery_date'] || $rate['expected_transit_time']) {
+        $delivery = ' expected ' . trim($rate['expected_delivery_date'] . ' ' . ($rate['expected_transit_time'] ? '(' . $rate['expected_transit_time'] . ' days)' : ''));
+    }
+    echo '- ' . $rate['service_code'] . ' ' . $rate['service_name'] . ' ' . $rate['due'] . $delivery . PHP_EOL;
 }
 
 if (! $buy_label) {
@@ -209,7 +213,7 @@ function build_shipment_xml(string $customer_number, string $origin_postal_code,
 /**
  * Parses rate quotes from Canada Post XML.
  *
- * @return array<int, array{service_code: string, service_name: string, due: string}>
+ * @return array<int, array{service_code: string, service_name: string, due: string, expected_delivery_date: string, expected_transit_time: string}>
  */
 function parse_rates(string $body): array
 {
@@ -224,6 +228,8 @@ function parse_rates(string $body): array
             'service_code' => (string) ($quote->xpath('./*[local-name()="service-code"]')[0] ?? ''),
             'service_name' => (string) ($quote->xpath('./*[local-name()="service-name"]')[0] ?? ''),
             'due' => (string) ($quote->xpath('.//*[local-name()="due"]')[0] ?? ''),
+            'expected_delivery_date' => (string) ($quote->xpath('.//*[local-name()="service-standard"]/*[local-name()="expected-delivery-date"]')[0] ?? ''),
+            'expected_transit_time' => (string) ($quote->xpath('.//*[local-name()="service-standard"]/*[local-name()="expected-transit-time"]')[0] ?? ''),
         );
     }
 

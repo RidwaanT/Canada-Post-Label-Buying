@@ -147,6 +147,20 @@
     </label>
   `;
 
+  const renderDeliveryEstimate = (rate) => {
+    const date = rate.expected_delivery_date || '';
+    const transitTime = rate.expected_transit_time || '';
+
+    if (!date && !transitTime) {
+      return '';
+    }
+
+    const dayLabel = transitTime ? `${escapeHtml(transitTime)} ${Number(transitTime) === 1 ? 'day' : 'days'}` : '';
+    const estimate = date && dayLabel ? `${escapeHtml(date)} (${dayLabel})` : escapeHtml(date || dayLabel);
+
+    return `<div class="wlp-rate__delivery">Expected arrival: ${estimate}</div>`;
+  };
+
   const loadRates = async (orderId, signatureRequired = signatureEnabled()) => {
     content.innerHTML = `
       ${renderSignatureControl(orderId, signatureRequired)}
@@ -180,6 +194,7 @@
             <div>
               <strong>${escapeHtml(rate.service_name || rate.service_code)}</strong>
               <div>${rate.due ? `$${escapeHtml(rate.due)} CAD` : ''}</div>
+              ${renderDeliveryEstimate(rate)}
             </div>
             <button class="button ${payload.hasLabel ? '' : 'button-primary'}" type="button" data-wlp-buy-label data-order-id="${escapeHtml(orderId)}" data-preset-id="${escapeHtml(entry.preset.id)}" data-service-code="${escapeHtml(rate.service_code)}" data-has-label="${payload.hasLabel ? 'yes' : 'no'}">${escapeHtml(payload.hasLabel ? (text.buyOverride || 'Buy replacement label') : (text.buyLabel || 'Buy label'))}</button>
           </div>
@@ -274,6 +289,7 @@
 
       content.innerHTML = `
         <p><strong>${escapeHtml(text.tracking || 'Tracking')}:</strong> ${escapeHtml(result.data.shipment.tracking_number)}</p>
+        ${renderDeliveryEstimate(result.data.rate || {})}
         <p><a class="button button-primary" target="_blank" href="${escapeHtml(result.data.printUrl)}">${escapeHtml(text.printLabel || 'Print label')}</a></p>
       `;
       const card = document.querySelector(`[data-wlp-order-card][data-order-id="${CSS.escape(buyButton.getAttribute('data-order-id'))}"]`);

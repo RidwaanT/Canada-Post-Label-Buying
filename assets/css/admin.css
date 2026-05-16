@@ -167,6 +167,11 @@
   border-top: 0;
 }
 
+.wlp-rate__delivery {
+  color: #646970;
+  margin-top: 3px;
+}
+
 .wlp-existing-label {
   background: #f6f7f7;
   border: 1px solid #dcdcde;

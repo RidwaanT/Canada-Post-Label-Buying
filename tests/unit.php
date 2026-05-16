@@ -293,6 +293,9 @@ $parsed_rates       = $parse_rates_method->invoke(
 			</price-details>
 			<service-standard>
 				<expected-transit-time>3</expected-transit-time>
+				<guaranteed-transit-time>2</guaranteed-transit-time>
+				<min-transit-time>1</min-transit-time>
+				<max-transit-time>3</max-transit-time>
 				<expected-delivery-date>2026-05-20</expected-delivery-date>
 			</service-standard>
 		</price-quote>
@@ -300,6 +303,9 @@ $parsed_rates       = $parse_rates_method->invoke(
 );
 wlp_assert('2026-05-20' === ($parsed_rates[0]['expected_delivery_date'] ?? ''), 'Expected delivery date parsed from Canada Post rates.');
 wlp_assert('3' === ($parsed_rates[0]['expected_transit_time'] ?? ''), 'Expected transit time parsed from Canada Post rates.');
+wlp_assert('2' === ($parsed_rates[0]['guaranteed_transit_time'] ?? ''), 'Expected guaranteed transit time parsed from Canada Post rates.');
+wlp_assert('1' === ($parsed_rates[0]['min_transit_time'] ?? ''), 'Expected minimum transit time parsed from Canada Post rates.');
+wlp_assert('3' === ($parsed_rates[0]['max_transit_time'] ?? ''), 'Expected maximum transit time parsed from Canada Post rates.');
 
 $wlp_test_options[WLP_Settings::OPTION_HIDE_REGULAR]    = 'yes';
 $wlp_test_options[WLP_Settings::OPTION_DEFAULT_SERVICE] = 'DOM.RP';

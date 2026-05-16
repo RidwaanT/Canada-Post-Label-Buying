@@ -65,7 +65,8 @@ echo 'Rates returned: ' . count($rates) . PHP_EOL;
 foreach ($rates as $rate) {
     $delivery = '';
     if ($rate['expected_delivery_date'] || $rate['expected_transit_time']) {
-        $delivery = ' expected ' . trim($rate['expected_delivery_date'] . ' ' . ($rate['expected_transit_time'] ? '(' . $rate['expected_transit_time'] . ' days)' : ''));
+        $delivery = ' transit ' . ($rate['expected_transit_time'] ? $rate['expected_transit_time'] . ' business days' : 'unavailable');
+        $delivery .= $rate['expected_delivery_date'] ? ' expected ' . $rate['expected_delivery_date'] : '';
     }
     echo '- ' . $rate['service_code'] . ' ' . $rate['service_name'] . ' ' . $rate['due'] . $delivery . PHP_EOL;
 }
@@ -213,7 +214,7 @@ function build_shipment_xml(string $customer_number, string $origin_postal_code,
 /**
  * Parses rate quotes from Canada Post XML.
  *
- * @return array<int, array{service_code: string, service_name: string, due: string, expected_delivery_date: string, expected_transit_time: string}>
+ * @return array<int, array{service_code: string, service_name: string, due: string, expected_delivery_date: string, expected_transit_time: string, guaranteed_transit_time: string, min_transit_time: string, max_transit_time: string}>
  */
 function parse_rates(string $body): array
 {
@@ -230,6 +231,9 @@ function parse_rates(string $body): array
             'due' => (string) ($quote->xpath('.//*[local-name()="due"]')[0] ?? ''),
             'expected_delivery_date' => (string) ($quote->xpath('.//*[local-name()="service-standard"]/*[local-name()="expected-delivery-date"]')[0] ?? ''),
             'expected_transit_time' => (string) ($quote->xpath('.//*[local-name()="service-standard"]/*[local-name()="expected-transit-time"]')[0] ?? ''),
+            'guaranteed_transit_time' => (string) ($quote->xpath('.//*[local-name()="service-standard"]/*[local-name()="guaranteed-transit-time"]')[0] ?? ''),
+            'min_transit_time' => (string) ($quote->xpath('.//*[local-name()="service-standard"]/*[local-name()="min-transit-time"]')[0] ?? ''),
+            'max_transit_time' => (string) ($quote->xpath('.//*[local-name()="service-standard"]/*[local-name()="max-transit-time"]')[0] ?? ''),
         );
     }
 

@@ -147,18 +147,68 @@
     </label>
   `;
 
-  const renderDeliveryEstimate = (rate) => {
-    const date = rate.expected_delivery_date || '';
-    const transitTime = rate.expected_transit_time || '';
-
-    if (!date && !transitTime) {
-      return '';
+  const parseTransitDays = (value) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return Math.max(0, Math.round(value));
     }
 
-    const dayLabel = transitTime ? `${escapeHtml(transitTime)} ${Number(transitTime) === 1 ? 'day' : 'days'}` : '';
-    const estimate = date && dayLabel ? `${escapeHtml(date)} (${dayLabel})` : escapeHtml(date || dayLabel);
+    if (typeof value === 'string') {
+      const match = value.match(/\d+/);
+      if (match) {
+        const parsed = Number(match[0]);
+        if (Number.isFinite(parsed)) {
+          return Math.max(0, Math.round(parsed));
+        }
+      }
+    }
 
-    return `<div class="wlp-rate__delivery">Expected arrival: ${estimate}</div>`;
+    return null;
+  };
+
+  const formatTransitRange = (rate) => {
+    const expected = parseTransitDays(rate.expected_transit_time);
+    const guaranteed = parseTransitDays(rate.guaranteed_transit_time);
+    const minTransit = parseTransitDays(rate.min_transit_time);
+    const maxTransit = parseTransitDays(rate.max_transit_time);
+
+    if (minTransit !== null || maxTransit !== null) {
+      let minDays = minTransit ?? expected ?? guaranteed;
+      let maxDays = maxTransit ?? guaranteed ?? expected ?? minTransit;
+
+      if (minDays === null && maxDays === null) {
+        return 'Transit time unavailable';
+      }
+
+      if (minDays === null) {
+        minDays = maxDays;
+      }
+
+      if (maxDays === null) {
+        maxDays = minDays;
+      }
+
+      if (minDays > maxDays) {
+        const currentMin = minDays;
+        minDays = maxDays;
+        maxDays = currentMin;
+      }
+
+      return minDays === maxDays ? `${minDays} business days` : `${minDays}-${maxDays} business days`;
+    }
+
+    if (expected !== null) {
+      return `${expected} business days`;
+    }
+
+    if (guaranteed !== null) {
+      return `${guaranteed} business days`;
+    }
+
+    return 'Transit time unavailable';
+  };
+
+  const renderTransitEstimate = (rate) => {
+    return `<div class="wlp-rate__delivery">${escapeHtml(formatTransitRange(rate))}</div>`;
   };
 
   const loadRates = async (orderId, signatureRequired = signatureEnabled()) => {
@@ -194,7 +244,7 @@
             <div>
               <strong>${escapeHtml(rate.service_name || rate.service_code)}</strong>
               <div>${rate.due ? `$${escapeHtml(rate.due)} CAD` : ''}</div>
-              ${renderDeliveryEstimate(rate)}
+              ${renderTransitEstimate(rate)}
             </div>
             <button class="button ${payload.hasLabel ? '' : 'button-primary'}" type="button" data-wlp-buy-label data-order-id="${escapeHtml(orderId)}" data-preset-id="${escapeHtml(entry.preset.id)}" data-service-code="${escapeHtml(rate.service_code)}" data-has-label="${payload.hasLabel ? 'yes' : 'no'}">${escapeHtml(payload.hasLabel ? (text.buyOverride || 'Buy replacement label') : (text.buyLabel || 'Buy label'))}</button>
           </div>
@@ -289,7 +339,7 @@
 
       content.innerHTML = `
         <p><strong>${escapeHtml(text.tracking || 'Tracking')}:</strong> ${escapeHtml(result.data.shipment.tracking_number)}</p>
-        ${renderDeliveryEstimate(result.data.rate || {})}
+        ${renderTransitEstimate(result.data.rate || {})}
         <p><a class="button button-primary" target="_blank" href="${escapeHtml(result.data.printUrl)}">${escapeHtml(text.printLabel || 'Print label')}</a></p>
       `;
       const card = document.querySelector(`[data-wlp-order-card][data-order-id="${CSS.escape(buyButton.getAttribute('data-order-id'))}"]`);

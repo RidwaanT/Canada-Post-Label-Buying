@@ -35,6 +35,7 @@ final class WLP_Admin {
 		add_action( 'wp_ajax_wlp_get_rates', array( $this, 'ajax_get_rates' ) );
 		add_action( 'wp_ajax_wlp_create_label', array( $this, 'ajax_create_label' ) );
 		add_action( 'wp_ajax_wlp_quick_buy_label', array( $this, 'ajax_quick_buy_label' ) );
+		add_action( 'wp_ajax_wlp_send_customer_note', array( $this, 'ajax_send_customer_note' ) );
 		add_action( 'wp_ajax_wlp_create_dummy_order', array( $this, 'ajax_create_dummy_order' ) );
 		add_action( 'admin_post_wlp_print_label', array( $this, 'print_label' ) );
 		add_action( 'admin_post_wlp_bulk_print_labels', array( $this, 'bulk_print_labels' ) );
@@ -54,14 +55,6 @@ final class WLP_Admin {
 			array( $this, 'render_logistics_page' )
 		);
 
-		add_submenu_page(
-			'woocommerce',
-			__( 'Logistics Settings', 'woo-logistics-plugin' ),
-			__( 'Logistics Settings', 'woo-logistics-plugin' ),
-			'manage_woocommerce',
-			'wlp-logistics-settings',
-			array( $this, 'render_settings_page' )
-		);
 	}
 
 	/**
@@ -83,7 +76,7 @@ final class WLP_Admin {
 			array(
 				'ajaxUrl'           => admin_url( 'admin-ajax.php' ),
 				'nonce'             => wp_create_nonce( 'wlp_logistics' ),
-				'settingsUrl'       => admin_url( 'admin.php?page=wlp-logistics-settings' ),
+				'settingsUrl'       => admin_url( 'admin.php?page=wlp-logistics&view=settings' ),
 				'bulkPrintUrl'      => admin_url( 'admin-post.php?action=wlp_bulk_print_labels' ),
 				'bulkPrintNonce'    => wp_create_nonce( 'wlp_bulk_print_labels' ),
 				'i18n'              => array(
@@ -96,6 +89,12 @@ final class WLP_Admin {
 					'buyOverride'      => __( 'Buy replacement label', 'woo-logistics-plugin' ),
 					'tracking'         => __( 'Tracking', 'woo-logistics-plugin' ),
 					'printLabel'       => __( 'Print label', 'woo-logistics-plugin' ),
+					'print'            => __( 'Print', 'woo-logistics-plugin' ),
+					'sendNote'         => __( 'Send customer note', 'woo-logistics-plugin' ),
+					'sendingNote'      => __( 'Sending note...', 'woo-logistics-plugin' ),
+					'sentNote'         => __( 'Customer note sent.', 'woo-logistics-plugin' ),
+					'failedNote'       => __( 'Failed to send customer note.', 'woo-logistics-plugin' ),
+					'viewOptions'      => __( 'View options', 'woo-logistics-plugin' ),
 					'confirm'          => __( 'This order already has a label. Buy a replacement label anyway?', 'woo-logistics-plugin' ),
 					'quickBuying'      => __( 'Buying quick labels...', 'woo-logistics-plugin' ),
 					'quickDone'        => __( 'Quick buy complete.', 'woo-logistics-plugin' ),
@@ -119,14 +118,21 @@ final class WLP_Admin {
 			wp_die( esc_html__( 'You do not have permission to manage logistics.', 'woo-logistics-plugin' ) );
 		}
 
-		$orders = wc_get_orders(
+		if ( isset( $_GET['view'] ) && 'settings' === sanitize_key( wp_unslash( $_GET['view'] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$this->render_settings_page();
+			return;
+		}
+
+		$orders        = wc_get_orders(
 			array(
-				'limit'   => 50,
-				'status'  => WLP_Settings::eligible_statuses(),
+				'limit'   => 200,
+				'status'  => $this->logistics_query_statuses(),
 				'orderby' => 'date',
 				'order'   => 'DESC',
 			)
 		);
+		$buckets       = $this->bucket_orders( $orders );
+		$current_state = $this->current_logistics_state();
 
 		?>
 		<div class="wrap wlp-wrap">
@@ -144,17 +150,23 @@ final class WLP_Admin {
 					</div>
 					<button class="button button-primary" type="button" data-wlp-quick-buy-selected><?php echo esc_html__( 'Quick buy selected', 'woo-logistics-plugin' ); ?></button>
 					<button class="button" type="button" data-wlp-bulk-print-selected><?php echo esc_html__( 'Bulk print selected', 'woo-logistics-plugin' ); ?></button>
-					<button class="button" type="button" data-wlp-create-dummy-order><?php echo esc_html__( 'Create test order', 'woo-logistics-plugin' ); ?></button>
-					<a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=wlp-logistics-settings' ) ); ?>"><?php echo esc_html__( 'Settings', 'woo-logistics-plugin' ); ?></a>
+					<?php if ( $this->can_create_test_orders() ) : ?>
+						<button class="button" type="button" data-wlp-create-dummy-order><?php echo esc_html__( 'Create test order', 'woo-logistics-plugin' ); ?></button>
+					<?php endif; ?>
+					<a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=wlp-logistics&view=settings' ) ); ?>"><?php echo esc_html__( 'Settings', 'woo-logistics-plugin' ); ?></a>
 				</div>
 			</div>
 			<div class="wlp-bulk-status" data-wlp-bulk-status aria-live="polite"></div>
+			<?php $this->render_logistics_tabs( $buckets, $current_state ); ?>
 			<div class="wlp-board">
-				<?php foreach ( $orders as $order ) : ?>
+				<?php foreach ( $buckets[ $current_state ] as $order ) : ?>
 					<?php if ( $order instanceof WC_Order ) : ?>
 						<?php $this->render_order_card( $order ); ?>
 					<?php endif; ?>
 				<?php endforeach; ?>
+				<?php if ( empty( $buckets[ $current_state ] ) ) : ?>
+					<p class="wlp-empty"><?php echo esc_html__( 'No orders in this logistics state.', 'woo-logistics-plugin' ); ?></p>
+				<?php endif; ?>
 			</div>
 		</div>
 		<?php $this->render_drawer(); ?>
@@ -173,10 +185,10 @@ final class WLP_Admin {
 		<div class="wrap wlp-wrap">
 			<div class="wlp-header">
 				<div>
-					<h1><?php echo esc_html__( 'Woo Logistics Settings', 'woo-logistics-plugin' ); ?></h1>
+					<h1><?php echo esc_html__( 'Logistics Settings', 'woo-logistics-plugin' ); ?></h1>
 					<?php if ( isset( $_GET['settings-updated'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended ?>
 						<div class="notice notice-success inline wlp-settings-notice">
-							<p><?php echo esc_html__( 'Logistics settings saved.', 'woo-logistics-plugin' ); ?></p>
+							<p><?php echo esc_html__( 'Settings saved successfully.', 'woo-logistics-plugin' ); ?></p>
 						</div>
 					<?php endif; ?>
 				</div>
@@ -195,7 +207,14 @@ final class WLP_Admin {
 					<?php $this->field_checkbox( WLP_Settings::OPTION_NOTIFY, __( 'Send Canada Post customer notifications', 'woo-logistics-plugin' ), 'yes' ); ?>
 					<?php $this->field_checkbox( WLP_Settings::OPTION_SIGNATURE, __( 'Require signature on Canada Post labels', 'woo-logistics-plugin' ), 'no', __( 'When enabled, rates and purchased labels include Canada Post option SO - Signature. Priority may include this at no extra charge; other services may price it as an option.', 'woo-logistics-plugin' ) ); ?>
 					<?php $this->field_service_select( WLP_Settings::OPTION_DEFAULT_SERVICE, __( 'Default service for quick buy', 'woo-logistics-plugin' ), __( 'Quick buy uses this service when Canada Post returns it. If it is unavailable for an order, quick buy falls back to the cheapest returned rate.', 'woo-logistics-plugin' ) ); ?>
+					<?php $this->field_preset_select( WLP_Settings::OPTION_DEFAULT_PRESET, __( 'Default box for quick buy', 'woo-logistics-plugin' ), __( 'Quick buy uses this package preset. If it is unset or deleted, quick buy uses the first configured package preset.', 'woo-logistics-plugin' ) ); ?>
 					<?php $this->field_checkbox( WLP_Settings::OPTION_HIDE_REGULAR, __( 'Remove Regular Parcel as a label option', 'woo-logistics-plugin' ), 'no', __( 'When enabled, Regular Parcel is hidden from create-label choices and quick buy will not select it.', 'woo-logistics-plugin' ) ); ?>
+				</table>
+
+				<h2><?php echo esc_html__( 'Customer Order Notes', 'woo-logistics-plugin' ); ?></h2>
+				<table class="form-table" role="presentation">
+					<?php $this->field_checkbox( WLP_Settings::OPTION_CUSTOMER_NOTE, __( 'Send customer order note after label creation', 'woo-logistics-plugin' ), 'yes', __( 'Adds a customer-visible WooCommerce order note after a Canada Post label is purchased. WooCommerce sends its standard customer note email when enabled.', 'woo-logistics-plugin' ) ); ?>
+					<?php $this->field_textarea( WLP_Settings::OPTION_NOTE_TEMPLATE, __( 'Customer note template', 'woo-logistics-plugin' ), __( 'Available placeholders: {first_name}, {order_number}, {service_name}, {service_label}, {tracking_number}, {tracking_number_raw}, {tracking_url}.', 'woo-logistics-plugin' ) ); ?>
 				</table>
 
 				<h2><?php echo esc_html__( 'Origin', 'woo-logistics-plugin' ); ?></h2>
@@ -221,6 +240,11 @@ final class WLP_Admin {
 					<?php $this->field_number( WLP_Settings::OPTION_BASE_WEIGHT, __( 'Base package weight (kg)', 'woo-logistics-plugin' ), '0.001', __( 'Example: 0.050 means 50 g is added before requesting Canada Post rates or labels.', 'woo-logistics-plugin' ) ); ?>
 				</table>
 				<?php $this->render_preset_fields(); ?>
+
+				<h2><?php echo esc_html__( 'External Integrations', 'woo-logistics-plugin' ); ?></h2>
+				<table class="form-table" role="presentation">
+					<?php $this->field_checkbox( WLP_Settings::OPTION_EXTERNAL_META, __( 'Mirror label metadata for external logistics systems', 'woo-logistics-plugin' ), 'no', __( 'Writes additional hidden order metadata using the _medusa_logistics_* key format so external logistics dashboards can read labels created in WooCommerce.', 'woo-logistics-plugin' ) ); ?>
+				</table>
 
 				<p class="submit wlp-settings-actions">
 					<?php submit_button( __( 'Save Changes', 'woo-logistics-plugin' ), 'primary', 'submit', false ); ?>
@@ -264,6 +288,7 @@ final class WLP_Admin {
 		<p><strong><?php echo esc_html__( 'Service', 'woo-logistics-plugin' ); ?>:</strong> <?php echo esc_html( $meta['service_name'] ?: '-' ); ?></p>
 		<?php if ( $meta['label_artifact_url'] ) : ?>
 			<p><a class="button" target="_blank" href="<?php echo esc_url( $this->print_url( $order ) ); ?>"><?php echo esc_html__( 'Print label', 'woo-logistics-plugin' ); ?></a></p>
+			<p><button class="button" type="button" data-wlp-send-customer-note data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html__( 'Send customer note', 'woo-logistics-plugin' ); ?></button></p>
 		<?php endif; ?>
 		<p><button class="button" type="button" data-wlp-create-label data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html( WLP_Order_Logistics::has_label( $order ) ? __( 'View label options', 'woo-logistics-plugin' ) : __( 'Create label', 'woo-logistics-plugin' ) ); ?></button></p>
 		<?php $this->render_drawer(); ?>
@@ -367,6 +392,7 @@ final class WLP_Admin {
 					'printUrl' => $this->print_url( $order ),
 					'package'  => $this->label_package_payload( $preset ),
 					'rate'     => $selected_rate,
+					'estimate' => $this->delivery_estimate_payload( $selected_rate['expected_delivery_date'] ?? '' ),
 				)
 			);
 		} catch ( Throwable $error ) {
@@ -391,8 +417,7 @@ final class WLP_Admin {
 		}
 
 		try {
-			$presets = $this->client->get_presets();
-			$preset  = $presets[0] ?? null;
+			$preset = WLP_Settings::default_preset();
 
 			if ( ! is_array( $preset ) ) {
 				throw new RuntimeException( __( 'No package presets are configured.', 'woo-logistics-plugin' ) );
@@ -434,11 +459,34 @@ final class WLP_Admin {
 					'printUrl' => $this->print_url( $order ),
 					'package'  => $this->label_package_payload( $preset ),
 					'rate'     => $rate,
+					'estimate' => $this->delivery_estimate_payload( $rate['expected_delivery_date'] ?? '' ),
 				)
 			);
 		} catch ( Throwable $error ) {
 			wp_send_json_error( array( 'message' => $error->getMessage() ), 500 );
 		}
+	}
+
+	/**
+	 * AJAX: manually sends the configured customer tracking note.
+	 */
+	public function ajax_send_customer_note(): void {
+		$order = $this->ajax_order();
+
+		if ( ! WLP_Order_Logistics::has_label( $order ) ) {
+			wp_send_json_error( array( 'message' => __( 'Create a label before sending the customer tracking note.', 'woo-logistics-plugin' ) ), 400 );
+		}
+
+		$sent = WLP_Order_Logistics::send_customer_label_note( $order, array(), true );
+		if ( ! $sent ) {
+			wp_send_json_error( array( 'message' => __( 'No tracking number is available for this order.', 'woo-logistics-plugin' ) ), 400 );
+		}
+
+		wp_send_json_success(
+			array(
+				'message' => __( 'Customer note sent.', 'woo-logistics-plugin' ),
+			)
+		);
 	}
 
 	/**
@@ -450,6 +498,10 @@ final class WLP_Admin {
 		}
 
 		check_ajax_referer( 'wlp_logistics', 'nonce' );
+
+		if ( ! $this->can_create_test_orders() ) {
+			wp_send_json_error( array( 'message' => __( 'Test order creation is disabled in production.', 'woo-logistics-plugin' ) ), 403 );
+		}
 
 		if ( ! function_exists( 'wc_create_order' ) ) {
 			wp_send_json_error( array( 'message' => __( 'WooCommerce order creation is unavailable.', 'woo-logistics-plugin' ) ), 500 );
@@ -596,35 +648,198 @@ final class WLP_Admin {
 	}
 
 	/**
+	 * Returns Woo statuses that can appear in the logistics tabs.
+	 *
+	 * @return array<int, string>
+	 */
+	private function logistics_query_statuses(): array {
+		$statuses   = WLP_Settings::eligible_statuses();
+		$statuses[] = 'completed';
+
+		return array_values( array_unique( array_filter( $statuses ) ) );
+	}
+
+	/**
+	 * Whether the current environment should expose test order tools.
+	 */
+	private function can_create_test_orders(): bool {
+		return ! $this->is_production_environment();
+	}
+
+	/**
+	 * Detects production using WordPress' environment type when available.
+	 */
+	private function is_production_environment(): bool {
+		if ( function_exists( 'wp_get_environment_type' ) ) {
+			return 'production' === wp_get_environment_type();
+		}
+
+		$environment = getenv( 'WP_ENVIRONMENT_TYPE' );
+		if ( false === $environment || '' === $environment ) {
+			return true;
+		}
+
+		return 'production' === strtolower( (string) $environment );
+	}
+
+	/**
+	 * Returns valid logistics tab definitions.
+	 *
+	 * @return array<string, string>
+	 */
+	private function logistics_states(): array {
+		return array(
+			'to_be_shipped' => __( 'To be shipped', 'woo-logistics-plugin' ),
+			'in_transit'    => __( 'In transit', 'woo-logistics-plugin' ),
+			'delivered'     => __( 'Delivered', 'woo-logistics-plugin' ),
+		);
+	}
+
+	/**
+	 * Resolves the selected logistics tab from the request.
+	 */
+	private function current_logistics_state(): string {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$state = isset( $_GET['wlp_status'] ) ? sanitize_key( wp_unslash( $_GET['wlp_status'] ) ) : 'to_be_shipped';
+
+		return array_key_exists( $state, $this->logistics_states() ) ? $state : 'to_be_shipped';
+	}
+
+	/**
+	 * Groups orders by logistics state.
+	 *
+	 * @param array<int, mixed> $orders WooCommerce order query results.
+	 * @return array<string, array<int, WC_Order>>
+	 */
+	private function bucket_orders( array $orders ): array {
+		$buckets = array_fill_keys( array_keys( $this->logistics_states() ), array() );
+
+		foreach ( $orders as $order ) {
+			if ( ! $order instanceof WC_Order ) {
+				continue;
+			}
+
+			$buckets[ $this->order_logistics_state( $order ) ][] = $order;
+		}
+
+		return $buckets;
+	}
+
+	/**
+	 * Renders the logistics state tabs.
+	 *
+	 * @param array<string, array<int, WC_Order>> $buckets Orders grouped by state.
+	 */
+	private function render_logistics_tabs( array $buckets, string $current_state ): void {
+		?>
+		<nav class="nav-tab-wrapper wlp-tabs" aria-label="<?php echo esc_attr__( 'Logistics status', 'woo-logistics-plugin' ); ?>">
+			<?php foreach ( $this->logistics_states() as $state => $label ) : ?>
+				<?php
+				$count = count( $buckets[ $state ] ?? array() );
+				$url   = add_query_arg(
+					array(
+						'page'       => 'wlp-logistics',
+						'wlp_status' => $state,
+					),
+					admin_url( 'admin.php' )
+				);
+				?>
+				<a class="nav-tab <?php echo esc_attr( $state === $current_state ? 'nav-tab-active' : '' ); ?>" href="<?php echo esc_url( $url ); ?>">
+					<?php echo esc_html( $label ); ?>
+					<span class="wlp-tab-count"><?php echo esc_html( (string) $count ); ?></span>
+				</a>
+			<?php endforeach; ?>
+		</nav>
+		<?php
+	}
+
+	/**
+	 * Classifies an order using the same Woo logistics state rules as the storefront hub.
+	 */
+	private function order_logistics_state( WC_Order $order ): string {
+		$meta = WLP_Order_Logistics::read( $order );
+
+		if ( '' !== $meta['delivered_at'] ) {
+			return 'delivered';
+		}
+
+		if ( '' !== $meta['shipped_at'] || ( 'completed' === $order->get_status() && '' !== $meta['label_created_at'] ) ) {
+			return 'in_transit';
+		}
+
+		if ( 'completed' === $order->get_status() && '' === $meta['label_created_at'] ) {
+			return 'delivered';
+		}
+
+		return 'to_be_shipped';
+	}
+
+	/**
+	 * Returns a display label for a logistics state.
+	 */
+	private function logistics_state_label( string $state ): string {
+		$states = $this->logistics_states();
+
+		return $states[ $state ] ?? $states['to_be_shipped'];
+	}
+
+	/**
 	 * Renders one order card.
 	 */
 	private function render_order_card( WC_Order $order ): void {
 		$meta            = WLP_Order_Logistics::read( $order );
 		$has_label       = WLP_Order_Logistics::has_label( $order );
 		$package_preview = $this->order_package_preview( $order, $meta, $has_label );
+		$state           = $this->order_logistics_state( $order );
+		$tracking_url    = $this->tracking_url( $meta );
+		$estimate_date   = 'in_transit' === $state ? $this->current_delivery_estimate_date( $order, $meta ) : '';
+		$detail_label    = 'in_transit' === $state ? __( 'Estimated delivery', 'woo-logistics-plugin' ) : __( 'Package', 'woo-logistics-plugin' );
+		$detail_value    = 'in_transit' === $state ? $this->delivery_estimate_label( $estimate_date ) : $package_preview['preset'];
+		$pill            = $this->logistics_state_label( $state );
+		$pill_class      = match ( $state ) {
+			'delivered'  => 'is-delivered',
+			'in_transit' => 'is-ready',
+			default      => 'is-pending',
+		};
+		$is_selectable = 'delivered' !== $state || $has_label;
 		?>
-		<section class="wlp-card" data-wlp-order-card data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>" data-has-label="<?php echo esc_attr( $has_label ? 'yes' : 'no' ); ?>" data-print-url="<?php echo esc_url( $has_label ? $this->print_url( $order ) : '' ); ?>">
-			<label class="wlp-select">
-				<input type="checkbox" data-wlp-order-select value="<?php echo esc_attr( (string) $order->get_id() ); ?>">
-				<span><?php echo esc_html__( 'Select order', 'woo-logistics-plugin' ); ?></span>
-			</label>
+		<section class="wlp-card" data-wlp-order-card data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>" data-logistics-state="<?php echo esc_attr( $state ); ?>" data-has-label="<?php echo esc_attr( $has_label ? 'yes' : 'no' ); ?>" data-print-url="<?php echo esc_url( $has_label ? $this->print_url( $order ) : '' ); ?>">
+			<?php if ( $is_selectable ) : ?>
+				<label class="wlp-select">
+					<input type="checkbox" data-wlp-order-select value="<?php echo esc_attr( (string) $order->get_id() ); ?>">
+					<span><?php echo esc_html__( 'Select order', 'woo-logistics-plugin' ); ?></span>
+				</label>
+			<?php endif; ?>
 			<div class="wlp-card__top">
 				<div>
 					<h2>#<?php echo esc_html( $order->get_order_number() ); ?></h2>
-					<p><?php echo esc_html( $this->recipient_line( $order ) ); ?></p>
+					<div class="wlp-card__recipient"><?php echo esc_html( $this->recipient_line( $order ) ); ?></div>
 				</div>
-				<span class="wlp-pill <?php echo esc_attr( $has_label ? 'is-ready' : 'is-pending' ); ?>"><?php echo esc_html( $has_label ? __( 'Labeled', 'woo-logistics-plugin' ) : __( 'Needs label', 'woo-logistics-plugin' ) ); ?></span>
+				<span class="wlp-pill <?php echo esc_attr( $pill_class ); ?>"><?php echo esc_html( $pill ); ?></span>
 			</div>
 			<dl class="wlp-facts">
 				<div><dt><?php echo esc_html__( 'Status', 'woo-logistics-plugin' ); ?></dt><dd><?php echo esc_html( wc_get_order_status_name( $order->get_status() ) ); ?></dd></div>
-				<div><dt><?php echo esc_html__( 'Service', 'woo-logistics-plugin' ); ?></dt><dd><?php echo esc_html( $meta['service_name'] ?: '-' ); ?></dd></div>
-				<div><dt><?php echo esc_html__( 'Tracking', 'woo-logistics-plugin' ); ?></dt><dd data-wlp-card-tracking><?php echo esc_html( $meta['tracking_number'] ?: '-' ); ?></dd></div>
-				<div><dt><?php echo esc_html__( 'Package', 'woo-logistics-plugin' ); ?></dt><dd data-wlp-card-package><?php echo esc_html( $package_preview['preset'] ); ?></dd></div>
+				<div><dt><?php echo esc_html__( 'Logistics', 'woo-logistics-plugin' ); ?></dt><dd><?php echo esc_html( $pill ); ?></dd></div>
+				<div><dt><?php echo esc_html__( 'Service', 'woo-logistics-plugin' ); ?></dt><dd data-wlp-card-service><?php echo esc_html( $meta['service_name'] ?: '-' ); ?></dd></div>
+				<div>
+					<dt><?php echo esc_html__( 'Tracking', 'woo-logistics-plugin' ); ?></dt>
+					<dd data-wlp-card-tracking>
+						<?php if ( '' !== $meta['tracking_number'] && '' !== $tracking_url ) : ?>
+							<a target="_blank" href="<?php echo esc_url( $tracking_url ); ?>"><?php echo esc_html( $meta['tracking_number'] ); ?></a>
+						<?php else : ?>
+							<?php echo esc_html( $meta['tracking_number'] ?: '-' ); ?>
+						<?php endif; ?>
+					</dd>
+				</div>
+				<div><dt data-wlp-card-detail-label><?php echo esc_html( $detail_label ); ?></dt><dd data-wlp-card-detail><?php echo esc_html( $detail_value ); ?></dd></div>
 			</dl>
 			<div class="wlp-actions">
-				<button class="button button-primary" type="button" data-wlp-create-label data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html( $has_label ? __( 'View label options', 'woo-logistics-plugin' ) : __( 'Create label', 'woo-logistics-plugin' ) ); ?></button>
+				<?php if ( 'delivered' !== $state || $has_label ) : ?>
+					<button class="button button-primary" type="button" data-wlp-create-label data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html( $has_label ? __( 'View options', 'woo-logistics-plugin' ) : __( 'Create label', 'woo-logistics-plugin' ) ); ?></button>
+				<?php endif; ?>
 				<?php if ( $has_label ) : ?>
-					<a class="button" target="_blank" href="<?php echo esc_url( $this->print_url( $order ) ); ?>"><?php echo esc_html__( 'Print', 'woo-logistics-plugin' ); ?></a>
+					<a class="button" target="_blank" data-wlp-print-label href="<?php echo esc_url( $this->print_url( $order ) ); ?>"><?php echo esc_html__( 'Print', 'woo-logistics-plugin' ); ?></a>
+					<button class="button" type="button" data-wlp-send-customer-note data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html__( 'Send customer note', 'woo-logistics-plugin' ); ?></button>
 				<?php endif; ?>
 			</div>
 		</section>
@@ -652,8 +867,7 @@ final class WLP_Admin {
 				}
 			}
 		} else {
-			$presets = $this->client->get_presets();
-			$preset  = $presets[0] ?? null;
+			$preset = WLP_Settings::default_preset();
 
 			if ( is_array( $preset ) ) {
 				$preset_label = $this->preset_label( $preset );
@@ -694,6 +908,90 @@ final class WLP_Admin {
 	}
 
 	/**
+	 * Builds delivery estimate details returned after an AJAX label purchase.
+	 *
+	 * @return array{label: string, value: string, raw: string}
+	 */
+	private function delivery_estimate_payload( string $expected_delivery_date ): array {
+		return array(
+			'label' => __( 'Estimated delivery', 'woo-logistics-plugin' ),
+			'value' => $this->delivery_estimate_label( $expected_delivery_date ),
+			'raw'   => $expected_delivery_date,
+		);
+	}
+
+	/**
+	 * Formats an expected delivery date for admin cards.
+	 */
+	private function delivery_estimate_label( string $expected_delivery_date ): string {
+		$expected_delivery_date = trim( $expected_delivery_date );
+		if ( '' === $expected_delivery_date ) {
+			return __( 'Not available', 'woo-logistics-plugin' );
+		}
+
+		$timestamp = strtotime( $expected_delivery_date );
+		if ( false === $timestamp ) {
+			return $expected_delivery_date;
+		}
+
+		return wp_date( (string) get_option( 'date_format', 'F j, Y' ), $timestamp );
+	}
+
+	/**
+	 * Returns the best current delivery estimate, refreshing from Canada Post when missing.
+	 *
+	 * @param WC_Order              $order WooCommerce order.
+	 * @param array<string, string> $meta Logistics metadata.
+	 */
+	private function current_delivery_estimate_date( WC_Order $order, array $meta ): string {
+		if ( '' !== $meta['expected_delivery_date'] ) {
+			return $meta['expected_delivery_date'];
+		}
+
+		if ( '' === $meta['tracking_number'] ) {
+			return '';
+		}
+
+		try {
+			$estimate = $this->client->get_tracking_estimate( $meta['tracking_number'], true );
+			$metadata = array(
+				'last_polled_at' => gmdate( 'c' ),
+			);
+
+			if ( '' !== $estimate['expected_delivery_date'] ) {
+				$metadata['expected_delivery_date'] = $estimate['expected_delivery_date'];
+			}
+
+			if ( '' !== $estimate['actual_delivery_date'] ) {
+				$metadata['delivered_at'] = $estimate['actual_delivery_date'];
+			}
+
+			WLP_Order_Logistics::write_tracking_estimate( $order, $metadata );
+
+			return $estimate['expected_delivery_date'];
+		} catch ( Throwable $error ) {
+			return '';
+		}
+	}
+
+	/**
+	 * Returns a Canada Post tracking URL for card links.
+	 *
+	 * @param array<string, string> $meta Logistics metadata.
+	 */
+	private function tracking_url( array $meta ): string {
+		if ( '' !== $meta['tracking_url'] ) {
+			return $meta['tracking_url'];
+		}
+
+		if ( '' === $meta['tracking_number'] ) {
+			return '';
+		}
+
+		return 'https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=' . rawurlencode( $meta['tracking_number'] );
+	}
+
+	/**
 	 * Renders the shared label drawer.
 	 */
 	private function render_drawer(): void {
@@ -717,6 +1015,24 @@ final class WLP_Admin {
 		<tr>
 			<th scope="row"><label for="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th>
 			<td><input class="regular-text" id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>" value="<?php echo esc_attr( $value ); ?>" type="text"></td>
+		</tr>
+		<?php
+	}
+
+	/**
+	 * Renders a textarea setting row.
+	 */
+	private function field_textarea( string $key, string $label, string $description = '' ): void {
+		$value = WLP_Settings::OPTION_NOTE_TEMPLATE === $key ? WLP_Settings::customer_label_note_template() : (string) get_option( $key, '' );
+		?>
+		<tr>
+			<th scope="row"><label for="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th>
+			<td>
+				<textarea class="large-text" id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>" rows="11"><?php echo esc_textarea( $value ); ?></textarea>
+				<?php if ( '' !== $description ) : ?>
+					<p class="description"><?php echo esc_html( $description ); ?></p>
+				<?php endif; ?>
+			</td>
 		</tr>
 		<?php
 	}
@@ -751,6 +1067,30 @@ final class WLP_Admin {
 				<select class="regular-text" id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>">
 					<?php foreach ( WLP_Settings::service_options() as $code => $name ) : ?>
 						<option value="<?php echo esc_attr( $code ); ?>" <?php selected( $value, $code ); ?>><?php echo esc_html( '' === $code ? $name : $code . ' - ' . $name ); ?></option>
+					<?php endforeach; ?>
+				</select>
+				<?php if ( '' !== $description ) : ?>
+					<p class="description"><?php echo esc_html( $description ); ?></p>
+				<?php endif; ?>
+			</td>
+		</tr>
+		<?php
+	}
+
+	/**
+	 * Renders a package preset selector.
+	 */
+	private function field_preset_select( string $key, string $label, string $description = '' ): void {
+		$value   = WLP_Settings::default_preset_id();
+		$presets = WLP_Settings::presets();
+		?>
+		<tr>
+			<th scope="row"><label for="<?php echo esc_attr( $key ); ?>"><?php echo esc_html( $label ); ?></label></th>
+			<td>
+				<select class="regular-text" id="<?php echo esc_attr( $key ); ?>" name="<?php echo esc_attr( $key ); ?>">
+					<option value=""><?php echo esc_html__( 'First configured package preset', 'woo-logistics-plugin' ); ?></option>
+					<?php foreach ( $presets as $preset ) : ?>
+						<option value="<?php echo esc_attr( (string) $preset['id'] ); ?>" <?php selected( $value, (string) $preset['id'] ); ?>><?php echo esc_html( $this->preset_label( $preset ) ); ?></option>
 					<?php endforeach; ?>
 				</select>
 				<?php if ( '' !== $description ) : ?>

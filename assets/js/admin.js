@@ -15,6 +15,14 @@
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
+  const cssEscape = (value) => {
+    if (window.CSS && typeof window.CSS.escape === 'function') {
+      return window.CSS.escape(value);
+    }
+
+    return String(value).replace(/["\\]/g, '\\$&');
+  };
+
   const post = async (action, data) => {
     const form = new FormData();
     form.append('action', action);
@@ -98,23 +106,73 @@
     }
   };
 
-  const updateCardAfterLabel = (card, printUrl, shipment = {}, packageDetails = {}) => {
+  const trackingLinkHtml = (trackingNumber, trackingUrl) => {
+    if (!trackingNumber) {
+      return '-';
+    }
+
+    if (!trackingUrl) {
+      return escapeHtml(trackingNumber);
+    }
+
+    return `<a target="_blank" href="${escapeHtml(trackingUrl)}">${escapeHtml(trackingNumber)}</a>`;
+  };
+
+  const ensurePrintButton = (card, printUrl) => {
+    if (!printUrl) {
+      return;
+    }
+
+    const actions = card.querySelector('.wlp-actions');
+    if (!actions) {
+      return;
+    }
+
+    const existing = actions.querySelector('[data-wlp-print-label]');
+    if (existing) {
+      existing.setAttribute('href', printUrl);
+      return;
+    }
+
+    actions.insertAdjacentHTML('beforeend', `<a class="button" target="_blank" data-wlp-print-label href="${escapeHtml(printUrl)}">${escapeHtml(text.print || 'Print')}</a>`);
+  };
+
+  const ensureCustomerNoteButton = (card) => {
+    const actions = card.querySelector('.wlp-actions');
+    if (!actions || actions.querySelector('[data-wlp-send-customer-note]')) {
+      return;
+    }
+
+    const orderId = card.getAttribute('data-order-id') || '';
+    actions.insertAdjacentHTML('beforeend', `<button class="button" type="button" data-wlp-send-customer-note data-order-id="${escapeHtml(orderId)}">${escapeHtml(text.sendNote || 'Send customer note')}</button>`);
+  };
+
+  const updateCardAfterLabel = (card, printUrl, shipment = {}, packageDetails = {}, estimate = {}, rate = {}) => {
     card.setAttribute('data-has-label', 'yes');
     card.setAttribute('data-print-url', printUrl || '');
-    const pill = card.querySelector('.wlp-pill');
-    if (pill) {
-      pill.classList.remove('is-pending');
-      pill.classList.add('is-ready');
-      pill.textContent = 'Labeled';
-    }
     const tracking = card.querySelector('[data-wlp-card-tracking]');
     if (tracking && shipment.tracking_number) {
-      tracking.textContent = shipment.tracking_number;
+      tracking.innerHTML = trackingLinkHtml(shipment.tracking_number, shipment.tracking_url);
     }
-    const packageTarget = card.querySelector('[data-wlp-card-package]');
-    if (packageTarget && packageDetails.preset) {
-      packageTarget.textContent = packageDetails.preset;
+    const service = card.querySelector('[data-wlp-card-service]');
+    if (service && (shipment.service_name || rate.service_name)) {
+      service.textContent = shipment.service_name || rate.service_name;
     }
+    const inTransit = card.getAttribute('data-logistics-state') === 'in_transit';
+    const detailLabel = card.querySelector('[data-wlp-card-detail-label]');
+    if (detailLabel && inTransit && estimate.label) {
+      detailLabel.textContent = estimate.label;
+    }
+    const detailTarget = card.querySelector('[data-wlp-card-detail]');
+    if (detailTarget) {
+      detailTarget.textContent = inTransit ? (estimate.value || packageDetails.preset || '-') : (packageDetails.preset || estimate.value || '-');
+    }
+    const createButton = card.querySelector('[data-wlp-create-label]');
+    if (createButton) {
+      createButton.textContent = text.viewOptions || 'View options';
+    }
+    ensurePrintButton(card, printUrl);
+    ensureCustomerNoteButton(card);
     updateSelectionCount();
   };
 
@@ -214,7 +272,10 @@
   const loadRates = async (orderId, signatureRequired = signatureEnabled()) => {
     content.innerHTML = `
       ${renderSignatureControl(orderId, signatureRequired)}
-      <p>${escapeHtml(text.loadingRates || 'Loading Canada Post rates...')}</p>
+      <div class="wlp-loader">
+        <div class="wlp-spinner"></div>
+        <p>${escapeHtml(text.loadingRates || 'Loading Canada Post rates...')}</p>
+      </div>
     `;
 
     const result = await post('wlp_get_rates', {
@@ -241,9 +302,9 @@
       const rates = entry.rates.length
         ? entry.rates.map((rate) => `
           <div class="wlp-rate">
-            <div>
-              <strong>${escapeHtml(rate.service_name || rate.service_code)}</strong>
-              <div>${rate.due ? `$${escapeHtml(rate.due)} CAD` : ''}</div>
+            <div class="wlp-rate__info">
+              <span class="wlp-rate__name">${escapeHtml(rate.service_name || rate.service_code)}</span>
+              <div class="wlp-rate__price">${rate.due ? `$${escapeHtml(rate.due)} CAD` : ''}</div>
               ${renderTransitEstimate(rate)}
             </div>
             <button class="button ${payload.hasLabel ? '' : 'button-primary'}" type="button" data-wlp-buy-label data-order-id="${escapeHtml(orderId)}" data-preset-id="${escapeHtml(entry.preset.id)}" data-service-code="${escapeHtml(rate.service_code)}" data-has-label="${payload.hasLabel ? 'yes' : 'no'}">${escapeHtml(payload.hasLabel ? (text.buyOverride || 'Buy replacement label') : (text.buyLabel || 'Buy label'))}</button>
@@ -338,14 +399,42 @@
       }
 
       content.innerHTML = `
-        <p><strong>${escapeHtml(text.tracking || 'Tracking')}:</strong> ${escapeHtml(result.data.shipment.tracking_number)}</p>
+        <p><strong>${escapeHtml(text.tracking || 'Tracking')}:</strong> ${trackingLinkHtml(result.data.shipment.tracking_number, result.data.shipment.tracking_url)}</p>
         ${renderTransitEstimate(result.data.rate || {})}
         <p><a class="button button-primary" target="_blank" href="${escapeHtml(result.data.printUrl)}">${escapeHtml(text.printLabel || 'Print label')}</a></p>
       `;
-      const card = document.querySelector(`[data-wlp-order-card][data-order-id="${CSS.escape(buyButton.getAttribute('data-order-id'))}"]`);
+      const card = document.querySelector(`[data-wlp-order-card][data-order-id="${cssEscape(buyButton.getAttribute('data-order-id') || '')}"]`);
       if (card) {
-        updateCardAfterLabel(card, result.data.printUrl, result.data.shipment, result.data.package);
+        updateCardAfterLabel(card, result.data.printUrl, result.data.shipment, result.data.package, result.data.estimate, result.data.rate);
       }
+      return;
+    }
+
+    const sendNoteButton = event.target.closest('[data-wlp-send-customer-note]');
+    if (sendNoteButton) {
+      const originalText = sendNoteButton.textContent;
+      sendNoteButton.disabled = true;
+      sendNoteButton.textContent = text.sendingNote || 'Sending note...';
+
+      const result = await post('wlp_send_customer_note', {
+        orderId: sendNoteButton.getAttribute('data-order-id'),
+      });
+
+      sendNoteButton.disabled = false;
+      sendNoteButton.textContent = originalText || (text.sendNote || 'Send customer note');
+
+      if (!result.success) {
+        const message = result.data && result.data.message ? result.data.message : (text.failedNote || 'Failed to send customer note.');
+        bulkStatus(message, [{
+          orderId: sendNoteButton.getAttribute('data-order-id'),
+          orderNumber: sendNoteButton.getAttribute('data-order-id'),
+          message,
+        }]);
+        window.alert(message);
+        return;
+      }
+
+      bulkStatus(result.data && result.data.message ? result.data.message : (text.sentNote || 'Customer note sent.'));
       return;
     }
 
@@ -404,7 +493,7 @@
         if (result.success && result.data && result.data.printUrl) {
           success += 1;
           printUrls.push(result.data.printUrl);
-          updateCardAfterLabel(card, result.data.printUrl, result.data.shipment, result.data.package);
+          updateCardAfterLabel(card, result.data.printUrl, result.data.shipment, result.data.package, result.data.estimate, result.data.rate);
         } else {
           failed += 1;
           failures.push({

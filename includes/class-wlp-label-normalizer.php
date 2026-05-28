@@ -33,6 +33,8 @@ final class WLP_Label_Normalizer {
 	 * @param string $body PDF bytes.
 	 */
 	public static function normalize_pdf( string $body ): string {
+		self::load_pdf_dependencies();
+
 		if ( ! class_exists( Fpdi::class ) || ! class_exists( StreamReader::class ) ) {
 			return $body;
 		}
@@ -78,6 +80,8 @@ final class WLP_Label_Normalizer {
 	 * @param array<int, string> $bodies PDF byte strings.
 	 */
 	public static function merge_pdfs( array $bodies ): string {
+		self::load_pdf_dependencies();
+
 		if ( ! class_exists( Fpdi::class ) || ! class_exists( StreamReader::class ) ) {
 			throw new RuntimeException( esc_html__( 'PDF merging is unavailable because FPDI is not loaded.', 'woo-logistics-plugin' ) );
 		}
@@ -109,5 +113,19 @@ final class WLP_Label_Normalizer {
 	 */
 	private static function approx( float $a, float $b ): bool {
 		return abs( $a - $b ) <= self::TOLERANCE_MM;
+	}
+
+	/**
+	 * Loads optional PDF dependencies only when labels need PDF processing.
+	 */
+	private static function load_pdf_dependencies(): void {
+		if ( class_exists( Fpdi::class ) && class_exists( StreamReader::class ) ) {
+			return;
+		}
+
+		$autoload = WLP_PATH . 'vendor/autoload.php';
+		if ( file_exists( $autoload ) ) {
+			require_once $autoload;
+		}
 	}
 }

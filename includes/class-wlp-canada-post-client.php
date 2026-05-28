@@ -140,6 +140,46 @@ final class WLP_Canada_Post_Client {
 	}
 
 	/**
+	 * Fetches the current Canada Post tracking estimate for an in-transit PIN.
+	 *
+	 * @return array{expected_delivery_date: string, actual_delivery_date: string}
+	 */
+	public function get_tracking_estimate( string $tracking_number, bool $use_changed_expected_date = true ): array {
+		$tracking_number = trim( $tracking_number );
+		if ( '' === $tracking_number ) {
+			throw new RuntimeException( __( 'Canada Post tracking number is required.', 'woo-logistics-plugin' ) );
+		}
+
+		$summary = $this->parse_tracking_summary(
+			$this->request_get(
+				'/vis/track/pin/' . rawurlencode( $tracking_number ) . '/summary',
+				'application/vnd.cpc.track-v2+xml'
+			)
+		);
+		$detail  = array();
+
+		if ( $use_changed_expected_date ) {
+			try {
+				$detail = $this->parse_tracking_detail(
+					$this->request_get(
+						'/vis/track/pin/' . rawurlencode( $tracking_number ) . '/detail',
+						'application/vnd.cpc.track-v2+xml'
+					)
+				);
+			} catch ( RuntimeException $error ) {
+				$detail = array();
+			}
+		}
+
+		$changed_expected_date = trim( $detail['changed_expected_date'] ?? '' );
+
+		return array(
+			'expected_delivery_date' => $use_changed_expected_date && '' !== $changed_expected_date ? $changed_expected_date : trim( $summary['expected_delivery_date'] ?? '' ),
+			'actual_delivery_date'   => trim( $summary['actual_delivery_date'] ?? '' ),
+		);
+	}
+
+	/**
 	 * Finds a preset by id.
 	 *
 	 * @return array<string, float|string>
@@ -223,6 +263,36 @@ final class WLP_Canada_Post_Client {
 		}
 
 		throw $last_error ?: new RuntimeException( __( 'Canada Post request failed.', 'woo-logistics-plugin' ) );
+	}
+
+	/**
+	 * Performs a Canada Post GET XML request.
+	 */
+	private function request_get( string $path, string $accept ): string {
+		$response = wp_remote_get(
+			$this->base_url() . $path,
+			array(
+				'headers' => array(
+					'Authorization'   => $this->auth_header(),
+					'Accept'          => $accept,
+					'Accept-Language' => 'en-CA',
+				),
+				'timeout' => 30,
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			throw new RuntimeException( $response->get_error_message() );
+		}
+
+		$body   = (string) wp_remote_retrieve_body( $response );
+		$status = (int) wp_remote_retrieve_response_code( $response );
+
+		if ( $status >= 200 && $status < 300 ) {
+			return $body;
+		}
+
+		throw new RuntimeException( $this->extract_error_message( $body, __( 'Canada Post request failed.', 'woo-logistics-plugin' ) ) );
 	}
 
 	/**
@@ -442,6 +512,34 @@ final class WLP_Canada_Post_Client {
 	}
 
 	/**
+	 * Parses Canada Post tracking summary XML.
+	 *
+	 * @return array<string, string>
+	 */
+	private function parse_tracking_summary( string $body ): array {
+		$xml = $this->xml( $body );
+
+		return array(
+			'expected_delivery_date' => (string) ( $xml->xpath( '//*[local-name()="expected-delivery-date"]' )[0] ?? '' ),
+			'actual_delivery_date'   => (string) ( $xml->xpath( '//*[local-name()="actual-delivery-date"]' )[0] ?? '' ),
+		);
+	}
+
+	/**
+	 * Parses Canada Post tracking detail XML.
+	 *
+	 * @return array<string, string>
+	 */
+	private function parse_tracking_detail( string $body ): array {
+		$xml = $this->xml( $body );
+
+		return array(
+			'expected_delivery_date' => (string) ( $xml->xpath( '//*[local-name()="expected-delivery-date"]' )[0] ?? '' ),
+			'changed_expected_date'  => (string) ( $xml->xpath( '//*[local-name()="changed-expected-date"]' )[0] ?? '' ),
+		);
+	}
+
+	/**
 	 * Parses XML safely.
 	 */
 	private function xml( string $body ): SimpleXMLElement {
@@ -470,7 +568,7 @@ final class WLP_Canada_Post_Client {
 	 * Returns the Canada Post API base URL.
 	 */
 	private function base_url(): string {
-		return 'yes' === get_option( WLP_Settings::OPTION_SANDBOX, 'yes' ) ? 'https://ct.soa-gw.canadapost.ca' : 'https://soa-gw.canadapost.ca';
+		return $this->sandbox_enabled() ? 'https://ct.soa-gw.canadapost.ca' : 'https://soa-gw.canadapost.ca';
 	}
 
 	/**
@@ -508,24 +606,33 @@ final class WLP_Canada_Post_Client {
 			return $value;
 		}
 
-		$fallbacks = array(
-			WLP_Settings::OPTION_SANDBOX        => array( 'WLP_CP_SANDBOX', 'CP_USE_SANDBOX' ),
-			WLP_Settings::OPTION_API_USER       => array( 'WLP_CP_API_USER', 'CP_DEVELOPMENT_USER' ),
-			WLP_Settings::OPTION_API_PASSWORD   => array( 'WLP_CP_API_PASSWORD', 'CP_DEVELOPMENT_PASSWORD' ),
-			WLP_Settings::OPTION_CUSTOMER       => array( 'WLP_CP_CUSTOMER_NUMBER', 'CP_CUSTOMER_NUMBER' ),
-			WLP_Settings::OPTION_ORIGIN_PHONE   => array( 'WLP_CP_ORIGIN_PHONE', 'CP_ORIGIN_PHONE_MEDUSA' ),
-			WLP_Settings::OPTION_ORIGIN_NAME    => array( 'WLP_CP_ORIGIN_NAME' ),
-			WLP_Settings::OPTION_ORIGIN_COMPANY => array( 'WLP_CP_ORIGIN_COMPANY' ),
-			WLP_Settings::OPTION_ORIGIN_EMAIL   => array( 'WLP_CP_ORIGIN_EMAIL' ),
-			WLP_Settings::OPTION_ORIGIN_ADDR_1  => array( 'WLP_CP_ORIGIN_ADDRESS_1' ),
-			WLP_Settings::OPTION_ORIGIN_ADDR_2  => array( 'WLP_CP_ORIGIN_ADDRESS_2' ),
-			WLP_Settings::OPTION_ORIGIN_CITY    => array( 'WLP_CP_ORIGIN_CITY' ),
-			WLP_Settings::OPTION_ORIGIN_PROV    => array( 'WLP_CP_ORIGIN_PROVINCE' ),
-			WLP_Settings::OPTION_ORIGIN_POSTAL  => array( 'WLP_CP_ORIGIN_POSTAL_CODE', 'CP_ORIGIN_POSTAL_CODE' ),
-			WLP_Settings::OPTION_SIGNATURE      => array( 'WLP_CP_SIGNATURE_REQUIRED' ),
-		);
+		if ( WLP_Settings::OPTION_API_USER === $option ) {
+			$fallbacks = $this->sandbox_enabled()
+				? array( 'WLP_CP_API_USER', 'CP_DEVELOPMENT_USER', 'CP_PROD_USER' )
+				: array( 'WLP_CP_API_USER', 'CP_PROD_USER', 'CP_DEVELOPMENT_USER' );
+		} elseif ( WLP_Settings::OPTION_API_PASSWORD === $option ) {
+			$fallbacks = $this->sandbox_enabled()
+				? array( 'WLP_CP_API_PASSWORD', 'CP_DEVELOPMENT_PASSWORD', 'CP_PROD_PASSWORD' )
+				: array( 'WLP_CP_API_PASSWORD', 'CP_PROD_PASSWORD', 'CP_DEVELOPMENT_PASSWORD' );
+		} else {
+			$env_fallbacks = array(
+				WLP_Settings::OPTION_SANDBOX        => array( 'WLP_CP_SANDBOX', 'CP_USE_SANDBOX' ),
+				WLP_Settings::OPTION_CUSTOMER       => array( 'WLP_CP_CUSTOMER_NUMBER', 'CP_CUSTOMER_NUMBER' ),
+				WLP_Settings::OPTION_ORIGIN_PHONE   => array( 'WLP_CP_ORIGIN_PHONE', 'CP_ORIGIN_PHONE_MEDUSA' ),
+				WLP_Settings::OPTION_ORIGIN_NAME    => array( 'WLP_CP_ORIGIN_NAME' ),
+				WLP_Settings::OPTION_ORIGIN_COMPANY => array( 'WLP_CP_ORIGIN_COMPANY' ),
+				WLP_Settings::OPTION_ORIGIN_EMAIL   => array( 'WLP_CP_ORIGIN_EMAIL' ),
+				WLP_Settings::OPTION_ORIGIN_ADDR_1  => array( 'WLP_CP_ORIGIN_ADDRESS_1' ),
+				WLP_Settings::OPTION_ORIGIN_ADDR_2  => array( 'WLP_CP_ORIGIN_ADDRESS_2' ),
+				WLP_Settings::OPTION_ORIGIN_CITY    => array( 'WLP_CP_ORIGIN_CITY' ),
+				WLP_Settings::OPTION_ORIGIN_PROV    => array( 'WLP_CP_ORIGIN_PROVINCE' ),
+				WLP_Settings::OPTION_ORIGIN_POSTAL  => array( 'WLP_CP_ORIGIN_POSTAL_CODE', 'CP_ORIGIN_POSTAL_CODE' ),
+				WLP_Settings::OPTION_SIGNATURE      => array( 'WLP_CP_SIGNATURE_REQUIRED' ),
+			);
+			$fallbacks     = $env_fallbacks[ $option ] ?? array();
+		}
 
-		foreach ( $fallbacks[ $option ] ?? array() as $env_name ) {
+		foreach ( $fallbacks as $env_name ) {
 			$env_value = getenv( $env_name );
 			if ( false !== $env_value && '' !== trim( (string) $env_value ) ) {
 				return trim( (string) $env_value );
@@ -533,6 +640,15 @@ final class WLP_Canada_Post_Client {
 		}
 
 		return '';
+	}
+
+	/**
+	 * Returns true when Canada Post sandbox mode is enabled.
+	 */
+	private function sandbox_enabled(): bool {
+		$value = strtolower( $this->option( WLP_Settings::OPTION_SANDBOX ) ?: 'yes' );
+
+		return in_array( $value, array( '1', 'true', 'yes', 'on' ), true );
 	}
 
 	/**

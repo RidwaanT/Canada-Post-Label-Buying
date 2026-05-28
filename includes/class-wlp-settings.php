@@ -35,8 +35,12 @@ final class WLP_Settings {
 	public const OPTION_BASE_WEIGHT     = 'wlp_base_package_weight_kg';
 	public const OPTION_USE_BASE_WEIGHT = 'wlp_use_base_package_weight';
 	public const OPTION_DEFAULT_SERVICE = 'wlp_default_service_code';
+	public const OPTION_DEFAULT_PRESET  = 'wlp_default_package_preset';
 	public const OPTION_HIDE_REGULAR    = 'wlp_hide_regular_parcel';
 	public const OPTION_SIGNATURE       = 'wlp_cp_signature_required';
+	public const OPTION_EXTERNAL_META   = 'wlp_external_logistics_meta_mirror';
+	public const OPTION_CUSTOMER_NOTE   = 'wlp_label_customer_note';
+	public const OPTION_NOTE_TEMPLATE   = 'wlp_label_customer_note_template';
 
 	/**
 	 * Registers settings.
@@ -62,8 +66,12 @@ final class WLP_Settings {
 		register_setting( 'wlp_settings', self::OPTION_USE_BASE_WEIGHT, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_BASE_WEIGHT, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_non_negative_float' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_DEFAULT_SERVICE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_service_code' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_DEFAULT_PRESET, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_preset_id' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_HIDE_REGULAR, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_SIGNATURE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_EXTERNAL_META, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_CUSTOMER_NOTE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_NOTE_TEMPLATE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_note_template' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_PRESETS, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_presets' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_STATUSES, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_statuses' ) ) );
 	}
@@ -126,6 +134,33 @@ final class WLP_Settings {
 	}
 
 	/**
+	 * Returns the configured default package preset for automatic buys.
+	 *
+	 * @return array<string, float|string>
+	 */
+	public static function default_preset(): array {
+		$presets   = self::presets();
+		$preset_id = self::default_preset_id();
+
+		if ( '' !== $preset_id ) {
+			foreach ( $presets as $preset ) {
+				if ( $preset_id === (string) $preset['id'] ) {
+					return $preset;
+				}
+			}
+		}
+
+		return $presets[0];
+	}
+
+	/**
+	 * Returns the configured default package preset id.
+	 */
+	public static function default_preset_id(): string {
+		return self::sanitize_preset_id( get_option( self::OPTION_DEFAULT_PRESET, '' ) );
+	}
+
+	/**
 	 * Returns eligible statuses without wc- prefixes.
 	 *
 	 * @return array<int, string>
@@ -184,6 +219,37 @@ final class WLP_Settings {
 	}
 
 	/**
+	 * Returns true when label metadata should be mirrored for external systems.
+	 */
+	public static function mirror_external_logistics_meta(): bool {
+		return 'yes' === get_option( self::OPTION_EXTERNAL_META, 'no' );
+	}
+
+	/**
+	 * Returns true when customer-facing WooCommerce order notes should be sent after labels are created.
+	 */
+	public static function customer_label_note_enabled(): bool {
+		return 'yes' === get_option( self::OPTION_CUSTOMER_NOTE, 'yes' );
+	}
+
+	/**
+	 * Returns the configured customer-facing label note template.
+	 */
+	public static function customer_label_note_template(): string {
+		$template = (string) get_option( self::OPTION_NOTE_TEMPLATE, self::default_customer_label_note_template() );
+		$template = trim( $template );
+
+		return '' === $template ? self::default_customer_label_note_template() : $template;
+	}
+
+	/**
+	 * Returns the default customer-facing label note template.
+	 */
+	public static function default_customer_label_note_template(): string {
+		return "Hi {first_name},\n\nCongratulations on your order! We have generated your shipping label and our team in Hamilton, Ontario is currently preparing your package for dispatch.\n\nYour Tracking Details:\n\nCarrier: Canada Post ({service_label})\n\nTracking Number: {tracking_number}\n\n<a href=\"{tracking_url}\">Track packages here</a>\n\nStatus: Label Created / Preparing for Shipment\n\nNote: Please allow up to 1 business day for Canada Post to scan the package into their system and provide an estimated delivery date.";
+	}
+
+	/**
 	 * Returns enabled Canada Post domestic service options.
 	 *
 	 * @return array<string, string>
@@ -223,6 +289,17 @@ final class WLP_Settings {
 	}
 
 	/**
+	 * Sanitizes the customer-facing label note template.
+	 *
+	 * @param mixed $value Raw value.
+	 */
+	public static function sanitize_note_template( $value ): string {
+		$template = trim( wp_kses_post( (string) $value ) );
+
+		return '' === $template ? self::default_customer_label_note_template() : $template;
+	}
+
+	/**
 	 * Sanitizes a non-negative float option.
 	 *
 	 * @param mixed $value Raw value.
@@ -242,6 +319,15 @@ final class WLP_Settings {
 		$code = strtoupper( sanitize_text_field( (string) $value ) );
 
 		return array_key_exists( $code, self::all_service_options() ) ? $code : '';
+	}
+
+	/**
+	 * Sanitizes a package preset id.
+	 *
+	 * @param mixed $value Raw value.
+	 */
+	public static function sanitize_preset_id( $value ): string {
+		return sanitize_key( (string) $value );
 	}
 
 	/**

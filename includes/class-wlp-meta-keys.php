@@ -25,10 +25,12 @@ final class WLP_Meta_Keys {
 	public const SHIPPING_CURRENCY      = '_wlp_shipping_currency';
 	public const SHIPMENT_ID            = '_wlp_shipment_id';
 	public const EXPECTED_DELIVERY_DATE = '_wlp_expected_delivery_date';
+	public const LAST_POLLED_AT         = '_wlp_last_polled_at';
 	public const SHIPPED_AT             = '_wlp_shipped_at';
 	public const DELIVERED_AT           = '_wlp_delivered_at';
 	public const PRESET_ID              = '_wlp_preset_id';
 	public const SHIPMENT_WEIGHT_KG     = '_wlp_shipment_weight_kg';
+	public const CUSTOMER_NOTE_TRACKING = '_wlp_customer_note_tracking_number';
 
 	public const LEGACY_MEDUSA_KEYS = array(
 		'label_created_at'       => '_medusa_logistics_label_created_at',
@@ -41,6 +43,7 @@ final class WLP_Meta_Keys {
 		'shipping_currency'      => '_medusa_logistics_shipping_currency',
 		'shipment_id'            => '_medusa_logistics_shipment_id',
 		'expected_delivery_date' => '_medusa_logistics_expected_delivery_date',
+		'last_polled_at'         => '_medusa_logistics_last_polled_at',
 		'shipped_at'             => '_medusa_logistics_shipped_at',
 		'delivered_at'           => '_medusa_logistics_delivered_at',
 	);

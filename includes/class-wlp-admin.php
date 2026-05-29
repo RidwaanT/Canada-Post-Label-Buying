@@ -746,6 +746,14 @@ final class WLP_Admin {
 					margin: 0 0 6px;
 					text-transform: uppercase;
 				}
+				.wlp-invoice__summary-row {
+					display: flex;
+					justify-content: space-between;
+					gap: 16px;
+				}
+				.wlp-invoice__summary-row strong {
+					white-space: nowrap;
+				}
 				.wlp-invoice__items {
 					border-collapse: collapse;
 					margin-top: 12px;
@@ -781,7 +789,7 @@ final class WLP_Admin {
 					display: block;
 					height: auto;
 					margin: 0 auto;
-					max-height: 7.1in;
+					max-height: 6.8in;
 					max-width: 100%;
 				}
 				.wlp-invoice__actions {
@@ -822,8 +830,19 @@ final class WLP_Admin {
 					</div>
 					<div class="wlp-invoice__box">
 						<h2><?php echo esc_html__( 'Order summary', 'woo-logistics-plugin' ); ?></h2>
-						<div><?php echo esc_html__( 'Status: Completed', 'woo-logistics-plugin' ); ?></div>
-						<div><?php echo esc_html( sprintf( 'Service: %s', $meta['service_name'] ?: '-' ) ); ?></div>
+						<div class="wlp-invoice__summary-row"><span><?php echo esc_html__( 'Status', 'woo-logistics-plugin' ); ?></span><strong><?php echo esc_html__( 'Completed', 'woo-logistics-plugin' ); ?></strong></div>
+						<div class="wlp-invoice__summary-row"><span><?php echo esc_html__( 'Service', 'woo-logistics-plugin' ); ?></span><strong><?php echo esc_html( $meta['service_name'] ?: '-' ); ?></strong></div>
+						<div class="wlp-invoice__summary-row"><span><?php echo esc_html__( 'Subtotal', 'woo-logistics-plugin' ); ?></span><strong><?php echo esc_html( $this->invoice_money( $order, $order->get_subtotal() ) ); ?></strong></div>
+						<?php if ( (float) $order->get_discount_total() > 0 ) : ?>
+							<div class="wlp-invoice__summary-row"><span><?php echo esc_html__( 'Discount', 'woo-logistics-plugin' ); ?></span><strong>-<?php echo esc_html( $this->invoice_money( $order, $order->get_discount_total() ) ); ?></strong></div>
+						<?php endif; ?>
+						<?php if ( (float) $order->get_shipping_total() > 0 ) : ?>
+							<div class="wlp-invoice__summary-row"><span><?php echo esc_html__( 'Shipping', 'woo-logistics-plugin' ); ?></span><strong><?php echo esc_html( $this->invoice_money( $order, $order->get_shipping_total() ) ); ?></strong></div>
+						<?php endif; ?>
+						<?php if ( (float) $order->get_total_tax() > 0 ) : ?>
+							<div class="wlp-invoice__summary-row"><span><?php echo esc_html__( 'Tax', 'woo-logistics-plugin' ); ?></span><strong><?php echo esc_html( $this->invoice_money( $order, $order->get_total_tax() ) ); ?></strong></div>
+						<?php endif; ?>
+						<div class="wlp-invoice__summary-row"><span><?php echo esc_html__( 'Total', 'woo-logistics-plugin' ); ?></span><strong><?php echo esc_html( $this->invoice_money( $order, $order->get_total() ) ); ?></strong></div>
 					</div>
 				</section>
 
@@ -832,13 +851,22 @@ final class WLP_Admin {
 						<tr>
 							<th><?php echo esc_html__( 'Item', 'woo-logistics-plugin' ); ?></th>
 							<th class="is-number"><?php echo esc_html__( 'Qty', 'woo-logistics-plugin' ); ?></th>
+							<th class="is-number"><?php echo esc_html__( 'Price', 'woo-logistics-plugin' ); ?></th>
+							<th class="is-number"><?php echo esc_html__( 'Line total', 'woo-logistics-plugin' ); ?></th>
 						</tr>
 					</thead>
 					<tbody>
 						<?php foreach ( $order->get_items() as $item ) : ?>
+							<?php
+							$quantity   = max( 1, (int) $item->get_quantity() );
+							$line_total = (float) $item->get_total();
+							$unit_price = $line_total / $quantity;
+							?>
 							<tr>
 								<td><?php echo esc_html( $item->get_name() ); ?></td>
 								<td class="is-number"><?php echo esc_html( (string) $item->get_quantity() ); ?></td>
+								<td class="is-number"><?php echo esc_html( $this->invoice_money( $order, $unit_price ) ); ?></td>
+								<td class="is-number"><?php echo esc_html( $this->invoice_money( $order, $line_total ) ); ?></td>
 							</tr>
 						<?php endforeach; ?>
 					</tbody>
@@ -1568,6 +1596,26 @@ final class WLP_Admin {
 			wp_nonce_url(
 				admin_url( 'admin-post.php?action=wlp_print_invoice&order_id=' . $order->get_id() ),
 				'wlp_print_invoice_' . $order->get_id()
+			),
+			ENT_QUOTES,
+			'UTF-8'
+		);
+	}
+
+	/**
+	 * Formats money for the printable invoice.
+	 *
+	 * @param float|int|string $amount Monetary amount.
+	 */
+	private function invoice_money( WC_Order $order, $amount ): string {
+		return html_entity_decode(
+			wp_strip_all_tags(
+				wc_price(
+					(float) $amount,
+					array(
+						'currency' => $order->get_currency(),
+					)
+				)
 			),
 			ENT_QUOTES,
 			'UTF-8'

@@ -684,6 +684,9 @@ final class WLP_Admin {
 			<meta charset="<?php bloginfo( 'charset' ); ?>">
 			<meta name="viewport" content="width=device-width, initial-scale=1">
 			<title><?php echo esc_html( sprintf( 'PeptideGo Order %s', $order->get_order_number() ) ); ?></title>
+			<link rel="preconnect" href="https://fonts.googleapis.com">
+			<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+			<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&display=swap" rel="stylesheet">
 			<style>
 				@page { margin: 0.35in; size: letter portrait; }
 				* { box-sizing: border-box; }
@@ -706,12 +709,11 @@ final class WLP_Admin {
 					padding-bottom: 10px;
 				}
 				.wlp-invoice__brand {
+					color: #111;
+					font-family: 'Montserrat', Arial, Helvetica, sans-serif;
 					font-size: 24px;
 					font-weight: 800;
 					letter-spacing: -0.02em;
-				}
-				.wlp-invoice__brand span {
-					color: #d71920;
 				}
 				.wlp-invoice__title {
 					font-size: 11px;
@@ -802,11 +804,11 @@ final class WLP_Admin {
 			<main class="wlp-invoice">
 				<header class="wlp-invoice__header">
 					<div>
-						<div class="wlp-invoice__brand">Peptide<span>Go</span></div>
+						<div class="wlp-invoice__brand">PeptideGo</div>
 						<div class="wlp-invoice__title"><?php echo esc_html__( 'Packing slip + reconstitution guide', 'woo-logistics-plugin' ); ?></div>
 					</div>
 					<div class="wlp-invoice__meta">
-						<strong>#<?php echo esc_html( $order->get_order_number() ); ?></strong>
+						<strong><?php echo esc_html( sprintf( 'Order #%s', $order->get_order_number() ) ); ?></strong>
 						<div><?php echo esc_html( $order_date ? $order_date->date_i18n( get_option( 'date_format' ) ) : gmdate( 'Y-m-d' ) ); ?></div>
 						<div><?php echo esc_html( sprintf( 'Tracking: %s', $tracking ) ); ?></div>
 					</div>
@@ -820,9 +822,8 @@ final class WLP_Admin {
 					</div>
 					<div class="wlp-invoice__box">
 						<h2><?php echo esc_html__( 'Order summary', 'woo-logistics-plugin' ); ?></h2>
-						<div><?php echo esc_html( sprintf( 'Status: %s', wc_get_order_status_name( $order->get_status() ) ) ); ?></div>
+						<div><?php echo esc_html__( 'Status: Completed', 'woo-logistics-plugin' ); ?></div>
 						<div><?php echo esc_html( sprintf( 'Service: %s', $meta['service_name'] ?: '-' ) ); ?></div>
-						<div><?php echo esc_html( sprintf( 'Total: %s', wp_strip_all_tags( $order->get_formatted_order_total() ) ) ); ?></div>
 					</div>
 				</section>
 

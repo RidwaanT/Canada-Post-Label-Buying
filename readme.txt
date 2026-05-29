@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, logistics, canada post, labels
 Requires at least: 6.4
 Tested up to: 6.6
 Requires PHP: 8.1
-Stable tag: 0.1.12
+Stable tag: 0.1.13
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,9 @@ No. V1 supports Canadian domestic shipments only.
 No. V1 supports buying and reprinting labels. Void/replacement workflows beyond explicit replacement purchases are planned for a later release.
 
 == Changelog ==
+
+= 0.1.13 =
+* Refine the printable packing slip header and customer-facing order summary.
 
 = 0.1.12 =
 * Add a printable packing slip with the PeptideGo reconstitution guide.

@@ -38,6 +38,7 @@ final class WLP_Admin {
 		add_action( 'wp_ajax_wlp_send_customer_note', array( $this, 'ajax_send_customer_note' ) );
 		add_action( 'wp_ajax_wlp_create_dummy_order', array( $this, 'ajax_create_dummy_order' ) );
 		add_action( 'admin_post_wlp_print_label', array( $this, 'print_label' ) );
+		add_action( 'admin_post_wlp_print_invoice', array( $this, 'print_invoice' ) );
 		add_action( 'admin_post_wlp_bulk_print_labels', array( $this, 'bulk_print_labels' ) );
 		add_action( 'add_meta_boxes', array( $this, 'register_order_box' ) );
 	}
@@ -287,6 +288,7 @@ final class WLP_Admin {
 		?>
 		<p><strong><?php echo esc_html__( 'Tracking', 'woo-logistics-plugin' ); ?>:</strong> <?php echo esc_html( $meta['tracking_number'] ?: '-' ); ?></p>
 		<p><strong><?php echo esc_html__( 'Service', 'woo-logistics-plugin' ); ?>:</strong> <?php echo esc_html( $meta['service_name'] ?: '-' ); ?></p>
+		<p><a class="button" target="_blank" href="<?php echo esc_url( $this->invoice_url( $order ) ); ?>"><?php echo esc_html__( 'Print invoice + guide', 'woo-logistics-plugin' ); ?></a></p>
 		<?php if ( $meta['label_artifact_url'] ) : ?>
 			<p><a class="button" target="_blank" href="<?php echo esc_url( $this->print_url( $order ) ); ?>"><?php echo esc_html__( 'Print label', 'woo-logistics-plugin' ); ?></a></p>
 			<p><button class="button" type="button" data-wlp-send-customer-note data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html__( 'Send customer note', 'woo-logistics-plugin' ); ?></button></p>
@@ -650,6 +652,222 @@ final class WLP_Admin {
 	}
 
 	/**
+	 * Renders a printable order invoice with the reconstitution guide.
+	 */
+	public function print_invoice(): void {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to print invoices.', 'woo-logistics-plugin' ) );
+		}
+
+		$order_id = isset( $_GET['order_id'] ) ? absint( $_GET['order_id'] ) : 0;
+		check_admin_referer( 'wlp_print_invoice_' . $order_id );
+
+		$order = wc_get_order( $order_id );
+		if ( ! $order instanceof WC_Order ) {
+			wp_die( esc_html__( 'Order not found.', 'woo-logistics-plugin' ) );
+		}
+
+		$meta        = WLP_Order_Logistics::read( $order );
+		$tracking    = trim( (string) $meta['tracking_number'] );
+		$tracking    = '' !== $tracking ? $tracking : __( 'Pending', 'woo-logistics-plugin' );
+		$guide_url   = WLP_URL . 'assets/images/reconstitution-guide.png';
+		$customer    = trim( (string) $order->get_formatted_shipping_full_name() );
+		$customer    = '' !== $customer ? $customer : trim( (string) $order->get_formatted_billing_full_name() );
+		$order_date  = $order->get_date_created();
+		$customer_note = trim( (string) $order->get_customer_note() );
+
+		nocache_headers();
+		?>
+		<!doctype html>
+		<html <?php language_attributes(); ?>>
+		<head>
+			<meta charset="<?php bloginfo( 'charset' ); ?>">
+			<meta name="viewport" content="width=device-width, initial-scale=1">
+			<title><?php echo esc_html( sprintf( 'PeptideGo Order %s', $order->get_order_number() ) ); ?></title>
+			<style>
+				@page { margin: 0.35in; size: letter portrait; }
+				* { box-sizing: border-box; }
+				body {
+					color: #111;
+					font-family: Arial, Helvetica, sans-serif;
+					font-size: 12px;
+					line-height: 1.35;
+					margin: 0;
+				}
+				.wlp-invoice {
+					margin: 0 auto;
+					max-width: 7.8in;
+				}
+				.wlp-invoice__header {
+					align-items: flex-start;
+					border-bottom: 2px solid #111;
+					display: flex;
+					justify-content: space-between;
+					padding-bottom: 10px;
+				}
+				.wlp-invoice__brand {
+					font-size: 24px;
+					font-weight: 800;
+					letter-spacing: -0.02em;
+				}
+				.wlp-invoice__brand span {
+					color: #d71920;
+				}
+				.wlp-invoice__title {
+					font-size: 11px;
+					font-weight: 700;
+					letter-spacing: 0.08em;
+					margin-top: 4px;
+					text-transform: uppercase;
+				}
+				.wlp-invoice__meta {
+					text-align: right;
+				}
+				.wlp-invoice__meta strong {
+					display: block;
+					font-size: 16px;
+				}
+				.wlp-invoice__grid {
+					display: grid;
+					gap: 12px;
+					grid-template-columns: 1fr 1fr;
+					margin-top: 12px;
+				}
+				.wlp-invoice__box {
+					border: 1px solid #cfd5dd;
+					border-radius: 6px;
+					padding: 10px;
+				}
+				.wlp-invoice__box h2 {
+					font-size: 11px;
+					letter-spacing: 0.08em;
+					margin: 0 0 6px;
+					text-transform: uppercase;
+				}
+				.wlp-invoice__items {
+					border-collapse: collapse;
+					margin-top: 12px;
+					width: 100%;
+				}
+				.wlp-invoice__items th,
+				.wlp-invoice__items td {
+					border-bottom: 1px solid #d8dde5;
+					padding: 7px 6px;
+					text-align: left;
+					vertical-align: top;
+				}
+				.wlp-invoice__items th {
+					font-size: 10px;
+					letter-spacing: 0.08em;
+					text-transform: uppercase;
+				}
+				.wlp-invoice__items .is-number {
+					text-align: right;
+					white-space: nowrap;
+				}
+				.wlp-invoice__note {
+					border: 1px solid #cfd5dd;
+					border-radius: 6px;
+					margin-top: 10px;
+					padding: 8px 10px;
+				}
+				.wlp-invoice__guide {
+					margin-top: 12px;
+					text-align: center;
+				}
+				.wlp-invoice__guide img {
+					display: block;
+					height: auto;
+					margin: 0 auto;
+					max-height: 7.1in;
+					max-width: 100%;
+				}
+				.wlp-invoice__actions {
+					margin: 14px 0;
+					text-align: right;
+				}
+				@media print {
+					.wlp-invoice__actions { display: none; }
+					.wlp-invoice__box,
+					.wlp-invoice__note,
+					.wlp-invoice__items th,
+					.wlp-invoice__items td { border-color: #bbb; }
+				}
+			</style>
+		</head>
+		<body>
+			<div class="wlp-invoice__actions">
+				<button type="button" onclick="window.print()"><?php echo esc_html__( 'Print invoice + guide', 'woo-logistics-plugin' ); ?></button>
+			</div>
+			<main class="wlp-invoice">
+				<header class="wlp-invoice__header">
+					<div>
+						<div class="wlp-invoice__brand">Peptide<span>Go</span></div>
+						<div class="wlp-invoice__title"><?php echo esc_html__( 'Packing slip + reconstitution guide', 'woo-logistics-plugin' ); ?></div>
+					</div>
+					<div class="wlp-invoice__meta">
+						<strong>#<?php echo esc_html( $order->get_order_number() ); ?></strong>
+						<div><?php echo esc_html( $order_date ? $order_date->date_i18n( get_option( 'date_format' ) ) : gmdate( 'Y-m-d' ) ); ?></div>
+						<div><?php echo esc_html( sprintf( 'Tracking: %s', $tracking ) ); ?></div>
+					</div>
+				</header>
+
+				<section class="wlp-invoice__grid">
+					<div class="wlp-invoice__box">
+						<h2><?php echo esc_html__( 'Ship to', 'woo-logistics-plugin' ); ?></h2>
+						<strong><?php echo esc_html( $customer ?: '-' ); ?></strong><br>
+						<?php echo wp_kses_post( $order->get_formatted_shipping_address() ?: $order->get_formatted_billing_address() ?: '-' ); ?>
+					</div>
+					<div class="wlp-invoice__box">
+						<h2><?php echo esc_html__( 'Order summary', 'woo-logistics-plugin' ); ?></h2>
+						<div><?php echo esc_html( sprintf( 'Status: %s', wc_get_order_status_name( $order->get_status() ) ) ); ?></div>
+						<div><?php echo esc_html( sprintf( 'Service: %s', $meta['service_name'] ?: '-' ) ); ?></div>
+						<div><?php echo esc_html( sprintf( 'Total: %s', wp_strip_all_tags( $order->get_formatted_order_total() ) ) ); ?></div>
+					</div>
+				</section>
+
+				<table class="wlp-invoice__items">
+					<thead>
+						<tr>
+							<th><?php echo esc_html__( 'Item', 'woo-logistics-plugin' ); ?></th>
+							<th class="is-number"><?php echo esc_html__( 'Qty', 'woo-logistics-plugin' ); ?></th>
+						</tr>
+					</thead>
+					<tbody>
+						<?php foreach ( $order->get_items() as $item ) : ?>
+							<tr>
+								<td><?php echo esc_html( $item->get_name() ); ?></td>
+								<td class="is-number"><?php echo esc_html( (string) $item->get_quantity() ); ?></td>
+							</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+
+				<?php if ( '' !== $customer_note ) : ?>
+					<div class="wlp-invoice__note">
+						<strong><?php echo esc_html__( 'Customer note:', 'woo-logistics-plugin' ); ?></strong>
+						<?php echo esc_html( $customer_note ); ?>
+					</div>
+				<?php endif; ?>
+
+				<section class="wlp-invoice__guide" aria-label="<?php echo esc_attr__( 'Reconstitution guide', 'woo-logistics-plugin' ); ?>">
+					<img src="<?php echo esc_url( $guide_url ); ?>" alt="<?php echo esc_attr__( 'How to reconstitute guide', 'woo-logistics-plugin' ); ?>">
+				</section>
+			</main>
+			<script>
+				window.addEventListener('load', function () {
+					window.setTimeout(function () {
+						window.print();
+					}, 300);
+				});
+			</script>
+		</body>
+		</html>
+		<?php
+		exit;
+	}
+
+	/**
 	 * Returns Woo statuses that can appear in the logistics tabs.
 	 *
 	 * @return array<int, string>
@@ -839,6 +1057,7 @@ final class WLP_Admin {
 				<?php if ( 'delivered' !== $state || $has_label ) : ?>
 					<button class="button button-primary" type="button" data-wlp-create-label data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html( $has_label ? __( 'View options', 'woo-logistics-plugin' ) : __( 'Create label', 'woo-logistics-plugin' ) ); ?></button>
 				<?php endif; ?>
+				<a class="button" target="_blank" href="<?php echo esc_url( $this->invoice_url( $order ) ); ?>"><?php echo esc_html__( 'Invoice + guide', 'woo-logistics-plugin' ); ?></a>
 				<?php if ( $has_label ) : ?>
 					<a class="button" target="_blank" data-wlp-print-label href="<?php echo esc_url( $this->print_url( $order ) ); ?>"><?php echo esc_html__( 'Print', 'woo-logistics-plugin' ); ?></a>
 					<button class="button" type="button" data-wlp-send-customer-note data-order-id="<?php echo esc_attr( (string) $order->get_id() ); ?>"><?php echo esc_html__( 'Send customer note', 'woo-logistics-plugin' ); ?></button>
@@ -1334,6 +1553,20 @@ final class WLP_Admin {
 			wp_nonce_url(
 				admin_url( 'admin-post.php?action=wlp_print_label&order_id=' . $order->get_id() ),
 				'wlp_print_label_' . $order->get_id()
+			),
+			ENT_QUOTES,
+			'UTF-8'
+		);
+	}
+
+	/**
+	 * Builds the printable invoice and guide URL.
+	 */
+	private function invoice_url( WC_Order $order ): string {
+		return html_entity_decode(
+			wp_nonce_url(
+				admin_url( 'admin-post.php?action=wlp_print_invoice&order_id=' . $order->get_id() ),
+				'wlp_print_invoice_' . $order->get_id()
 			),
 			ENT_QUOTES,
 			'UTF-8'

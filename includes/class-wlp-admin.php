@@ -1330,9 +1330,13 @@ final class WLP_Admin {
 	 * Builds the printable label URL.
 	 */
 	private function print_url( WC_Order $order ): string {
-		return wp_nonce_url(
-			admin_url( 'admin-post.php?action=wlp_print_label&order_id=' . $order->get_id() ),
-			'wlp_print_label_' . $order->get_id()
+		return html_entity_decode(
+			wp_nonce_url(
+				admin_url( 'admin-post.php?action=wlp_print_label&order_id=' . $order->get_id() ),
+				'wlp_print_label_' . $order->get_id()
+			),
+			ENT_QUOTES,
+			'UTF-8'
 		);
 	}
 
@@ -1345,9 +1349,13 @@ final class WLP_Admin {
 		$order_ids = array_values( array_unique( array_filter( array_map( 'absint', $order_ids ) ) ) );
 		sort( $order_ids, SORT_NUMERIC );
 
-		return wp_nonce_url(
-			admin_url( 'admin-post.php?action=wlp_bulk_print_labels&order_ids=' . rawurlencode( implode( ',', $order_ids ) ) ),
-			'wlp_bulk_print_labels'
+		return html_entity_decode(
+			wp_nonce_url(
+				admin_url( 'admin-post.php?action=wlp_bulk_print_labels&order_ids=' . rawurlencode( implode( ',', $order_ids ) ) ),
+				'wlp_bulk_print_labels'
+			),
+			ENT_QUOTES,
+			'UTF-8'
 		);
 	}
 

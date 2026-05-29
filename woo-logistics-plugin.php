@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Logistics Plugin
  * Description: Adds a WooCommerce logistics desk for Canada Post label creation, printing, and tracking metadata.
- * Version: 0.1.9
+ * Version: 0.1.10
  * Author: North End Tech
  * Requires PHP: 8.1
  * Requires Plugins: woocommerce
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'WLP_VERSION' ) ) {
-	define( 'WLP_VERSION', '0.1.9' );
+	define( 'WLP_VERSION', '0.1.10' );
 }
 
 if ( ! defined( 'WLP_FILE' ) ) {

@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, logistics, canada post, labels
 Requires at least: 6.4
 Tested up to: 6.6
 Requires PHP: 8.1
-Stable tag: 0.1.7
+Stable tag: 0.1.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,7 +12,7 @@ Adds a WooCommerce logistics desk for Canada Post label creation, printing, and 
 
 == Description ==
 
-Woo Logistics Plugin provides a WooCommerce admin logistics desk for Canadian domestic Canada Post shipments. It supports rate lookup, label purchase, configurable quick-buy service and package defaults, optional Canada Post signature-required labels, duplicate-label protection, reprinting, editable package presets, optional product-weight calculation with base package weight, HPOS compatibility, optional external logistics metadata mirroring, and plugin-owned order metadata.
+Woo Logistics Plugin provides a WooCommerce admin logistics desk for Canadian domestic Canada Post shipments. It supports rate lookup, label purchase, configurable quick-buy service and package defaults, optional Canada Post signature-required and Card for Pickup labels, duplicate-label protection, reprinting, editable package presets, optional product-weight calculation with base package weight, HPOS compatibility, optional external logistics metadata mirroring, and plugin-owned order metadata.
 
 == Installation ==
 
@@ -33,6 +33,9 @@ No. V1 supports Canadian domestic shipments only.
 No. V1 supports buying and reprinting labels. Void/replacement workflows beyond explicit replacement purchases are planned for a later release.
 
 == Changelog ==
+
+= 0.1.10 =
+* Add a per-label Card for Pickup option for Canada Post label purchases.
 
 = 0.1.7 =
 * Keep newly labeled orders in To be shipped until they have shipped metadata.

@@ -104,6 +104,7 @@ final class WLP_Admin {
 					'dummyCreated'     => __( 'Test order created. Reloading...', 'woo-logistics-plugin' ),
 					'dummyFailed'      => __( 'Failed to create test order.', 'woo-logistics-plugin' ),
 					'requireSignature' => __( 'Require signature', 'woo-logistics-plugin' ),
+					'cardForPickup'    => __( 'Card for pickup', 'woo-logistics-plugin' ),
 				),
 				'signatureRequired' => WLP_Settings::signature_required() ? 'yes' : 'no',
 			)
@@ -339,6 +340,7 @@ final class WLP_Admin {
 		$service_code       = isset( $_POST['serviceCode'] ) ? sanitize_text_field( wp_unslash( $_POST['serviceCode'] ) ) : '';
 		$override           = isset( $_POST['override'] ) && 'yes' === sanitize_text_field( wp_unslash( $_POST['override'] ) );
 		$signature_required = $this->ajax_signature_required();
+		$card_for_pickup    = $this->ajax_card_for_pickup();
 
 		if ( '' === $preset_id || '' === $service_code ) {
 			wp_send_json_error( array( 'message' => __( 'Package preset and service are required.', 'woo-logistics-plugin' ) ), 400 );
@@ -365,7 +367,7 @@ final class WLP_Admin {
 			}
 
 			$shipment_weight = $this->client->shipment_weight( $order, $preset );
-			$shipment        = $this->client->create_shipment( $order, $preset, $service_code, $signature_required );
+			$shipment        = $this->client->create_shipment( $order, $preset, $service_code, $signature_required, $card_for_pickup );
 
 			WLP_Order_Logistics::write_label(
 				$order,
@@ -1251,6 +1253,15 @@ final class WLP_Admin {
 		if ( '' === $value ) {
 			return WLP_Settings::signature_required();
 		}
+
+		return 'yes' === $value;
+	}
+
+	/**
+	 * Reads the per-request Card for Pickup option sent by the label drawer.
+	 */
+	private function ajax_card_for_pickup(): bool {
+		$value = isset( $_POST['cardForPickup'] ) ? sanitize_text_field( wp_unslash( $_POST['cardForPickup'] ) ) : '';
 
 		return 'yes' === $value;
 	}

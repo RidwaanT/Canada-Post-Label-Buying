@@ -85,14 +85,14 @@ final class WLP_Canada_Post_Client {
 	 * @param array<string, float|string> $preset Package preset.
 	 * @return array<string, string>
 	 */
-	public function create_shipment( WC_Order $order, array $preset, string $service_code, ?bool $signature_required = null ): array {
+	public function create_shipment( WC_Order $order, array $preset, string $service_code, ?bool $signature_required = null, bool $card_for_pickup = false ): array {
 		$this->assert_canadian_destination( $order );
 		$customer_number = $this->required_option( WLP_Settings::OPTION_CUSTOMER, __( 'Customer number', 'woo-logistics-plugin' ) );
 
 		$body = $this->request(
 			'POST',
 			'/rs/' . rawurlencode( $customer_number ) . '/ncshipment',
-			$this->build_shipment_xml( $order, $preset, $service_code, $signature_required ),
+			$this->build_shipment_xml( $order, $preset, $service_code, $signature_required, $card_for_pickup ),
 			'application/vnd.cpc.ncshipment-v4+xml',
 			'application/vnd.cpc.ncshipment-v4+xml'
 		);
@@ -309,7 +309,7 @@ final class WLP_Canada_Post_Client {
 		$dimensions->addChild( 'length', (string) $preset['length'] );
 		$dimensions->addChild( 'width', (string) $preset['width'] );
 		$dimensions->addChild( 'height', (string) $preset['height'] );
-		$this->add_signature_option( $xml, $signature_required );
+		$this->add_delivery_options( $xml, $signature_required );
 		$xml->addChild( 'origin-postal-code', $this->normalize_postal_code( $this->required_option( WLP_Settings::OPTION_ORIGIN_POSTAL, __( 'Origin postal code', 'woo-logistics-plugin' ) ) ) );
 		$destination = $xml->addChild( 'destination' );
 		$domestic    = $destination->addChild( 'domestic' );
@@ -324,7 +324,7 @@ final class WLP_Canada_Post_Client {
 	 * @param WC_Order                    $order WooCommerce order.
 	 * @param array<string, float|string> $preset Package preset.
 	 */
-	private function build_shipment_xml( WC_Order $order, array $preset, string $service_code, ?bool $signature_required = null ): string {
+	private function build_shipment_xml( WC_Order $order, array $preset, string $service_code, ?bool $signature_required = null, bool $card_for_pickup = false ): string {
 		$origin_phone = $this->normalize_phone( $this->option( WLP_Settings::OPTION_ORIGIN_PHONE ) );
 		if ( '' === $origin_phone ) {
 			throw new RuntimeException( __( 'Canada Post origin phone number is missing or invalid.', 'woo-logistics-plugin' ) );
@@ -391,7 +391,7 @@ final class WLP_Canada_Post_Client {
 		$dimensions->addChild( 'width', (string) $preset['width'] );
 		$dimensions->addChild( 'height', (string) $preset['height'] );
 
-		$this->add_signature_option( $delivery, $signature_required );
+		$this->add_delivery_options( $delivery, $signature_required, $card_for_pickup );
 
 		$preferences = $delivery->addChild( 'preferences' );
 		$preferences->addChild( 'show-packing-instructions', 'true' );
@@ -400,18 +400,29 @@ final class WLP_Canada_Post_Client {
 	}
 
 	/**
-	 * Adds Canada Post Signature option when enabled.
+	 * Adds Canada Post delivery options when enabled.
 	 */
-	private function add_signature_option( SimpleXMLElement $xml_parent, ?bool $signature_required = null ): void {
+	private function add_delivery_options( SimpleXMLElement $xml_parent, ?bool $signature_required = null, bool $card_for_pickup = false ): void {
 		$signature_required = $signature_required ?? ( 'yes' === $this->option( WLP_Settings::OPTION_SIGNATURE ) );
+		$option_codes       = array();
 
-		if ( ! $signature_required ) {
+		if ( $signature_required ) {
+			$option_codes[] = 'SO';
+		}
+
+		if ( $card_for_pickup ) {
+			$option_codes[] = 'HFP';
+		}
+
+		if ( empty( $option_codes ) ) {
 			return;
 		}
 
 		$options = $xml_parent->addChild( 'options' );
-		$option  = $options->addChild( 'option' );
-		$option->addChild( 'option-code', 'SO' );
+		foreach ( array_unique( $option_codes ) as $option_code ) {
+			$option = $options->addChild( 'option' );
+			$option->addChild( 'option-code', $option_code );
+		}
 	}
 
 	/**

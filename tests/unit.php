@@ -67,6 +67,22 @@ class WC_Order {
 	public function get_items(string $type = ''): array {
 		return $this->items;
 	}
+
+	public function get_shipping_first_name(): string {
+		return 'Test';
+	}
+
+	public function get_billing_first_name(): string {
+		return 'Fallback';
+	}
+
+	public function get_order_number(): string {
+		return '1001';
+	}
+
+	public function add_order_note(string $note, bool $is_customer_note = false, bool $added_by_user = false): int {
+		return 1;
+	}
 }
 
 /**
@@ -145,6 +161,27 @@ function wc_get_weight(float $weight, string $to_unit): float {
  */
 function sanitize_text_field(string $value): string {
 	return trim($value);
+}
+
+/**
+ * Escapes URLs for tests.
+ */
+function esc_url(string $value): string {
+	return $value;
+}
+
+/**
+ * Allows safe HTML for tests.
+ */
+function wp_kses_post(string $value): string {
+	return $value;
+}
+
+/**
+ * Strips tags for tests.
+ */
+function wp_strip_all_tags(string $value): string {
+	return strip_tags($value);
 }
 
 /**
@@ -331,6 +368,17 @@ $unsigned_override_xml     = (string) $rate_xml_method->invoke($client, $weight_
 $unsigned_override_document = new SimpleXMLElement($unsigned_override_xml);
 $unsigned_override_codes    = $unsigned_override_document->xpath('//*[local-name()="option-code"]') ?: array();
 wlp_assert(0 === count($unsigned_override_codes), 'Expected per-request signature override to disable global signature setting.');
+
+$delivery_options_method = new ReflectionMethod(WLP_Canada_Post_Client::class, 'add_delivery_options');
+$hfp_delivery_xml        = new SimpleXMLElement('<delivery-spec></delivery-spec>');
+$delivery_options_method->invoke($client, $hfp_delivery_xml, false, true);
+$hfp_option_codes = $hfp_delivery_xml->xpath('//*[local-name()="option-code"]') ?: array();
+wlp_assert(1 === count($hfp_option_codes) && 'HFP' === (string) $hfp_option_codes[0], 'Expected Card for Pickup to add Canada Post option HFP.');
+
+$combined_delivery_xml = new SimpleXMLElement('<delivery-spec></delivery-spec>');
+$delivery_options_method->invoke($client, $combined_delivery_xml, true, true);
+$combined_option_codes = array_map('strval', $combined_delivery_xml->xpath('//*[local-name()="option-code"]') ?: array());
+wlp_assert(array('SO', 'HFP') === $combined_option_codes, 'Expected delivery options to include signature SO and Card for Pickup HFP.');
 
 if ($failures) {
 	foreach ($failures as $failure) {

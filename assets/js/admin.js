@@ -205,6 +205,18 @@
     </label>
   `;
 
+  const cardForPickupEnabled = () => {
+    const checkbox = content.querySelector('[data-wlp-card-for-pickup]');
+    return checkbox ? checkbox.checked : false;
+  };
+
+  const renderCardForPickupControl = (orderId, checked = false) => `
+    <label class="wlp-drawer-option">
+      <input type="checkbox" data-wlp-card-for-pickup data-order-id="${escapeHtml(orderId)}" ${checked ? 'checked' : ''}>
+      <span>${escapeHtml(text.cardForPickup || 'Card for pickup')}</span>
+    </label>
+  `;
+
   const parseTransitDays = (value) => {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return Math.max(0, Math.round(value));
@@ -269,9 +281,10 @@
     return `<div class="wlp-rate__delivery">${escapeHtml(formatTransitRange(rate))}</div>`;
   };
 
-  const loadRates = async (orderId, signatureRequired = signatureEnabled()) => {
+  const loadRates = async (orderId, signatureRequired = signatureEnabled(), cardForPickup = cardForPickupEnabled()) => {
     content.innerHTML = `
       ${renderSignatureControl(orderId, signatureRequired)}
+      ${renderCardForPickupControl(orderId, cardForPickup)}
       <div class="wlp-loader">
         <div class="wlp-spinner"></div>
         <p>${escapeHtml(text.loadingRates || 'Loading Canada Post rates...')}</p>
@@ -285,6 +298,7 @@
     if (!result.success) {
       content.innerHTML = `
         ${renderSignatureControl(orderId, signatureRequired)}
+        ${renderCardForPickupControl(orderId, cardForPickup)}
         ${renderError(result.data && result.data.message ? result.data.message : (text.failedRates || 'Failed to load rates.'))}
       `;
       return;
@@ -294,10 +308,10 @@
       result.data.message = result.data.message || 'This order already has a label. Reprint it or buy a replacement.';
     }
 
-    renderRates(orderId, result.data, signatureRequired);
+    renderRates(orderId, result.data, signatureRequired, cardForPickup);
   };
 
-  const renderRates = (orderId, payload, signatureRequired = signatureEnabled()) => {
+  const renderRates = (orderId, payload, signatureRequired = signatureEnabled(), cardForPickup = cardForPickupEnabled()) => {
     const groups = payload.presets.map((entry) => {
       const rates = entry.rates.length
         ? entry.rates.map((rate) => `
@@ -320,7 +334,7 @@
       `;
     }).join('');
 
-    content.innerHTML = `${renderSignatureControl(orderId, signatureRequired)}${renderExistingLabel(payload)}${groups}`;
+    content.innerHTML = `${renderSignatureControl(orderId, signatureRequired)}${renderCardForPickupControl(orderId, cardForPickup)}${renderExistingLabel(payload)}${groups}`;
   };
 
   document.addEventListener('click', async (event) => {
@@ -380,6 +394,7 @@
         serviceCode: buyButton.getAttribute('data-service-code'),
         override: hasLabel ? 'yes' : 'no',
         signatureRequired: signatureEnabled() ? 'yes' : 'no',
+        cardForPickup: cardForPickupEnabled() ? 'yes' : 'no',
       });
 
       if (!result.success) {
@@ -541,7 +556,7 @@
 
     const signatureToggle = event.target.closest('[data-wlp-signature-required]');
     if (signatureToggle) {
-      await loadRates(signatureToggle.getAttribute('data-order-id'), signatureToggle.checked);
+      await loadRates(signatureToggle.getAttribute('data-order-id'), signatureToggle.checked, cardForPickupEnabled());
     }
   });
 

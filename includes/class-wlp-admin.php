@@ -675,6 +675,11 @@ final class WLP_Admin {
 		$customer    = '' !== $customer ? $customer : trim( (string) $order->get_formatted_billing_full_name() );
 		$order_date  = $order->get_date_created();
 		$customer_note = trim( (string) $order->get_customer_note() );
+		$item_count  = count( $order->get_items() );
+		$invoice_classes = array( 'wlp-invoice' );
+		if ( $item_count >= 7 ) {
+			$invoice_classes[] = 'wlp-invoice--many-items';
+		}
 
 		nocache_headers();
 		?>
@@ -785,12 +790,35 @@ final class WLP_Admin {
 					margin-top: 12px;
 					text-align: center;
 				}
+				.wlp-invoice__guide-frame {
+					height: 5.05in;
+					overflow: hidden;
+					width: 100%;
+				}
+				.wlp-invoice--many-items .wlp-invoice__guide-frame {
+					height: 4.25in;
+				}
 				.wlp-invoice__guide img {
 					display: block;
-					height: auto;
+					height: 6.4in;
 					margin: 0 auto;
-					max-height: 6.8in;
 					max-width: 100%;
+					object-fit: cover;
+					object-position: top center;
+					width: 100%;
+				}
+				.wlp-invoice__footer {
+					align-items: center;
+					border-top: 1px solid #cfd5dd;
+					display: flex;
+					font-size: 10px;
+					gap: 12px;
+					justify-content: space-between;
+					margin-top: 8px;
+					padding-top: 7px;
+				}
+				.wlp-invoice__footer strong {
+					white-space: nowrap;
 				}
 				.wlp-invoice__actions {
 					margin: 14px 0;
@@ -801,7 +829,8 @@ final class WLP_Admin {
 					.wlp-invoice__box,
 					.wlp-invoice__note,
 					.wlp-invoice__items th,
-					.wlp-invoice__items td { border-color: #bbb; }
+					.wlp-invoice__items td,
+					.wlp-invoice__footer { border-color: #bbb; }
 				}
 			</style>
 		</head>
@@ -809,7 +838,7 @@ final class WLP_Admin {
 			<div class="wlp-invoice__actions">
 				<button type="button" onclick="window.print()"><?php echo esc_html__( 'Print invoice + guide', 'woo-logistics-plugin' ); ?></button>
 			</div>
-			<main class="wlp-invoice">
+			<main class="<?php echo esc_attr( implode( ' ', $invoice_classes ) ); ?>">
 				<header class="wlp-invoice__header">
 					<div>
 						<div class="wlp-invoice__brand">PeptideGo</div>
@@ -880,8 +909,14 @@ final class WLP_Admin {
 				<?php endif; ?>
 
 				<section class="wlp-invoice__guide" aria-label="<?php echo esc_attr__( 'Reconstitution guide', 'woo-logistics-plugin' ); ?>">
-					<img src="<?php echo esc_url( $guide_url ); ?>" alt="<?php echo esc_attr__( 'How to reconstitute guide', 'woo-logistics-plugin' ); ?>">
+					<div class="wlp-invoice__guide-frame">
+						<img src="<?php echo esc_url( $guide_url ); ?>" alt="<?php echo esc_attr__( 'How to reconstitute guide', 'woo-logistics-plugin' ); ?>">
+					</div>
 				</section>
+				<footer class="wlp-invoice__footer">
+					<strong><?php echo esc_html__( 'Calculator:', 'woo-logistics-plugin' ); ?> peptidego.ca/calc</strong>
+					<span><?php echo esc_html__( 'For research use only. Handling and concentration reference only. Not intended to diagnose, treat, cure, or prevent disease.', 'woo-logistics-plugin' ); ?></span>
+				</footer>
 			</main>
 			<script>
 				window.addEventListener('load', function () {

@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, logistics, canada post, labels
 Requires at least: 6.4
 Tested up to: 6.6
 Requires PHP: 8.1
-Stable tag: 0.1.15
+Stable tag: 0.1.16
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,9 @@ No. V1 supports Canadian domestic shipments only.
 No. V1 supports buying and reprinting labels. Void/replacement workflows beyond explicit replacement purchases are planned for a later release.
 
 == Changelog ==
+
+= 0.1.16 =
+* Add a medium crop for printable invoices with four to six order items.
 
 = 0.1.15 =
 * Crop the printable reconstitution guide and move calculator/disclaimer text into a compact invoice footer.

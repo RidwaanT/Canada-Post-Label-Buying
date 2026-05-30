@@ -679,6 +679,8 @@ final class WLP_Admin {
 		$invoice_classes = array( 'wlp-invoice' );
 		if ( $item_count >= 7 ) {
 			$invoice_classes[] = 'wlp-invoice--many-items';
+		} elseif ( $item_count >= 4 ) {
+			$invoice_classes[] = 'wlp-invoice--several-items';
 		}
 
 		nocache_headers();
@@ -794,6 +796,9 @@ final class WLP_Admin {
 					height: 5.05in;
 					overflow: hidden;
 					width: 100%;
+				}
+				.wlp-invoice--several-items .wlp-invoice__guide-frame {
+					height: 4.65in;
 				}
 				.wlp-invoice--many-items .wlp-invoice__guide-frame {
 					height: 4.25in;

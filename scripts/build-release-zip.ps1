@@ -50,5 +50,7 @@ foreach ($item in $items) {
     }
 }
 
+Get-ChildItem -LiteralPath $stage -Force -Recurse -Directory -Filter ".git" | Remove-Item -Recurse -Force
+
 Compress-Archive -LiteralPath $stage -DestinationPath $zipPath
 Write-Output "Built $zipPath"

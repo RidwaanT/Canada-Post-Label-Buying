@@ -187,6 +187,7 @@ $wlp_test_options = array(
 	WLP_Settings::OPTION_DEFAULT_SERVICE => 'DOM.XP',
 	WLP_Settings::OPTION_HIDE_REGULAR   => 'no',
 	WLP_Settings::OPTION_SIGNATURE      => 'no',
+	WLP_Settings::OPTION_CUSTOMER_NOTE  => 'no',
 	WLP_Settings::OPTION_CUSTOMER       => '1234567',
 	WLP_Settings::OPTION_ORIGIN_POSTAL  => 'M5V3L9',
 	'woocommerce_weight_unit'           => 'lbs',
@@ -230,17 +231,47 @@ wlp_assert(! WLP_Order_Logistics::has_label($order), 'Order without metadata sho
 WLP_Order_Logistics::write_label(
 	$order,
 	array(
-		'label_artifact_url' => 'https://example.com/label.pdf',
-		'tracking_number'    => '123456789012',
-		'service_code'       => 'DOM.XP',
-		'preset_id'          => 'smallbox',
-		'shipment_weight_kg' => '1.864',
+		'label_created_at'      => '2026-06-09T10:00:00+00:00',
+		'label_artifact_url'    => 'https://example.com/label.pdf',
+		'tracking_number'       => '123456789012',
+		'service_code'          => 'DOM.XP',
+		'shipment_id'           => 'shipment-123',
+		'preset_id'             => 'small-box',
+		'packaging_preset_id'   => 'small-box',
+		'packaging_preset_name' => 'Small Box',
+		'shipment_weight_kg'    => '1.864',
 	)
 );
 wlp_assert(WLP_Order_Logistics::has_label($order), 'Order with label metadata should have a label.');
 wlp_assert('123456789012' === WLP_Order_Logistics::read($order)['tracking_number'], 'Expected tracking number readback.');
-wlp_assert('smallbox' === WLP_Order_Logistics::read($order)['preset_id'], 'Expected preset id readback.');
+wlp_assert('small-box' === WLP_Order_Logistics::read($order)['preset_id'], 'Expected preset id readback.');
+wlp_assert('small-box' === WLP_Order_Logistics::read($order)['packaging_preset_id'], 'Expected packaging preset id readback.');
+wlp_assert('Small Box' === WLP_Order_Logistics::read($order)['packaging_preset_name'], 'Expected packaging preset name readback.');
 wlp_assert('1.864' === WLP_Order_Logistics::read($order)['shipment_weight_kg'], 'Expected shipment weight readback.');
+WLP_Order_Logistics::write_label(
+	$order,
+	array(
+		'label_created_at'      => '2026-06-09T10:05:00+00:00',
+		'label_artifact_url'    => 'https://example.com/label.pdf',
+		'tracking_number'       => '123456789012',
+		'shipment_id'           => 'shipment-123',
+		'packaging_preset_id'   => 'small-box',
+		'packaging_preset_name' => 'Small Box',
+	)
+);
+wlp_assert('2026-06-09T10:00:00+00:00' === WLP_Order_Logistics::read($order)['label_created_at'], 'Expected same-shipment label write to preserve created timestamp.');
+
+$blank_package_order = new WC_Order();
+WLP_Order_Logistics::write_label(
+	$blank_package_order,
+	array(
+		'label_artifact_url'    => 'https://example.com/label.pdf',
+		'tracking_number'       => '123456789012',
+		'packaging_preset_id'   => '',
+		'packaging_preset_name' => '',
+	)
+);
+wlp_assert('' === WLP_Order_Logistics::read($blank_package_order)['packaging_preset_id'], 'Expected blank package preset id to be stored as blank.');
 
 $weight_order = new WC_Order();
 $weight_order->set_items(

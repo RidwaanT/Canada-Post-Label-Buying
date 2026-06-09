@@ -30,7 +30,7 @@ No. V1 supports Canadian domestic shipments only.
 
 = Does v1 void Canada Post labels? =
 
-No. V1 supports buying and reprinting labels. Void/replacement workflows beyond explicit replacement purchases are planned for a later release.
+No. V1 supports buying and reprinting labels. Void/replacement workflows beyond explicit replacement purchases are planned for a later release, so Medusa reversal handling is manual until Woo-side void metadata exists.
 
 == Changelog ==
 

@@ -32,6 +32,12 @@ The plugin stores label state in Woo order meta using `_wlp_*` keys. The importa
 - `_wlp_service_code`
 - `_wlp_service_name`
 - `_wlp_label_created_at`
+- `_wlp_packaging_preset_id`
+- `_wlp_packaging_preset_name`
+
+Packaging preset metadata is written from the package preset selected for the label purchase. If no preset id is provided by a future purchase path, `_wlp_packaging_preset_id` is stored blank rather than inferred from service or order details.
+
+This plugin version does not support voiding or cancelling Canada Post labels. Medusa reversal handling is manual until a Woo-side void workflow writes explicit reversal metadata.
 
 ## Development
 

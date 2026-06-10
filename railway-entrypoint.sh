@@ -136,6 +136,7 @@ configure_wlp_settings() {
 	update_wp_option_from_env wlp_calculate_product_weight WLP_CALCULATE_PRODUCT_WEIGHT
 	update_wp_option_from_env wlp_use_base_package_weight WLP_USE_BASE_PACKAGE_WEIGHT
 	update_wp_option_from_env wlp_base_package_weight_kg WLP_BASE_PACKAGE_WEIGHT_KG
+	update_wp_option_from_env wlp_external_logistics_meta_mirror WLP_EXTERNAL_LOGISTICS_META_MIRROR
 }
 
 setup_wordpress &

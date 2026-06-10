@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, logistics, canada post, labels
 Requires at least: 6.4
 Tested up to: 6.6
 Requires PHP: 8.1
-Stable tag: 0.1.16
+Stable tag: 0.1.18
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,11 @@ No. V1 supports Canadian domestic shipments only.
 No. V1 supports buying and reprinting labels. Void/replacement workflows beyond explicit replacement purchases are planned for a later release, so Medusa reversal handling is manual until Woo-side void metadata exists.
 
 == Changelog ==
+
+= 0.1.18 =
+* Preserve current logistics features while cleaning up stale Woo prep merge changes.
+* Keep logistics admin bootstrap off customer-facing frontend requests, checkout, and unrelated AJAX requests.
+* Preserve plugin settings and Canada Post credentials on uninstall unless data deletion is explicitly enabled.
 
 = 0.1.16 =
 * Add a medium crop for printable invoices with four to six order items.

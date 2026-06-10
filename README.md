@@ -7,7 +7,7 @@ Standalone WooCommerce plugin for a logistics desk focused on Canada Post label 
 - WooCommerce admin logistics page.
 - Canada Post settings page.
 - Fetch Canada Post rates by package preset.
-- Configurable default Canada Post service for quick buy.
+- Configurable default Canada Post service and package preset for quick buy.
 - Optional Canada Post signature-required labels.
 - Optional shipment weight calculation from WooCommerce product weights, with an optional base package weight.
 - Create Canada Post non-contract shipments.
@@ -36,6 +36,8 @@ The plugin stores label state in Woo order meta using `_wlp_*` keys. The importa
 - `_wlp_packaging_preset_name`
 
 Packaging preset metadata is written from the package preset selected for the label purchase. If no preset id is provided by a future purchase path, `_wlp_packaging_preset_id` is stored blank rather than inferred from service or order details.
+
+When **Mirror label metadata for external logistics systems** is enabled in Logistics Settings, the plugin also writes the same values to hidden `_medusa_logistics_*` keys for external dashboards. The mirrored keys use the same suffixes, for example `_medusa_logistics_tracking_number` and `_medusa_logistics_label_artifact_url`.
 
 This plugin version does not support voiding or cancelling Canada Post labels. Medusa reversal handling is manual until a Woo-side void workflow writes explicit reversal metadata.
 

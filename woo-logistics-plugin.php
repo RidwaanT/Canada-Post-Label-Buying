@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Logistics Plugin
  * Description: Adds a WooCommerce logistics desk for Canada Post label creation, printing, and tracking metadata.
- * Version: 0.1.16
+ * Version: 0.1.18
  * Author: North End Tech
  * Requires PHP: 8.1
  * Requires Plugins: woocommerce
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'WLP_VERSION' ) ) {
-	define( 'WLP_VERSION', '0.1.16' );
+	define( 'WLP_VERSION', '0.1.18' );
 }
 
 if ( ! defined( 'WLP_FILE' ) ) {
@@ -172,6 +172,25 @@ if ( ! function_exists( 'wlp_load_class_files' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wlp_should_boot_admin' ) ) {
+	/**
+	 * Returns true only for admin surfaces owned by this plugin.
+	 */
+	function wlp_should_boot_admin(): bool {
+		$action = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		if ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() ) {
+			return str_starts_with( $action, 'wlp_' );
+		}
+
+		if ( '' !== $action && str_starts_with( $action, 'wlp_' ) ) {
+			return true;
+		}
+
+		return function_exists( 'is_admin' ) && is_admin();
+	}
+}
+
 if ( ! function_exists( 'wlp_activate' ) ) {
 	/**
 	 * Add default settings when the plugin is activated.
@@ -218,6 +237,10 @@ add_action(
 				}
 			);
 
+			return;
+		}
+
+		if ( ! wlp_should_boot_admin() ) {
 			return;
 		}
 

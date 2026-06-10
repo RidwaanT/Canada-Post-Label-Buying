@@ -1,6 +1,6 @@
 <?php
 /**
- * Purpose: Cleans plugin-owned options on uninstall.
+ * Purpose: Cleans plugin-owned options on uninstall when explicitly requested.
  *
  * @package WooLogisticsPlugin
  */
@@ -11,7 +11,12 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 	exit;
 }
 
+if ( 'yes' !== get_option( 'wlp_delete_data_on_uninstall', 'no' ) ) {
+	return;
+}
+
 $options = array(
+	'wlp_delete_data_on_uninstall',
 	'wlp_cp_sandbox',
 	'wlp_cp_api_user',
 	'wlp_cp_api_password',
@@ -33,7 +38,11 @@ $options = array(
 	'wlp_base_package_weight_kg',
 	'wlp_use_base_package_weight',
 	'wlp_default_service_code',
+	'wlp_default_package_preset',
 	'wlp_hide_regular_parcel',
+	'wlp_external_logistics_meta_mirror',
+	'wlp_label_customer_note',
+	'wlp_label_customer_note_template',
 );
 
 foreach ( $options as $option ) {

@@ -32,6 +32,8 @@ final class WLP_Order_Logistics {
 			'shipping_cost'          => self::string_meta( $order, WLP_Meta_Keys::SHIPPING_COST, 'shipping_cost' ),
 			'shipping_currency'      => self::string_meta( $order, WLP_Meta_Keys::SHIPPING_CURRENCY, 'shipping_currency' ),
 			'shipment_id'            => self::string_meta( $order, WLP_Meta_Keys::SHIPMENT_ID, 'shipment_id' ),
+			'packaging_preset_id'    => self::string_meta( $order, WLP_Meta_Keys::PACKAGING_PRESET_ID ),
+			'packaging_preset_name'  => self::string_meta( $order, WLP_Meta_Keys::PACKAGING_PRESET_NAME ),
 			'expected_delivery_date' => self::string_meta( $order, WLP_Meta_Keys::EXPECTED_DELIVERY_DATE, 'expected_delivery_date' ),
 			'last_polled_at'         => self::string_meta( $order, WLP_Meta_Keys::LAST_POLLED_AT, 'last_polled_at' ),
 			'shipped_at'             => self::string_meta( $order, WLP_Meta_Keys::SHIPPED_AT, 'shipped_at' ),
@@ -58,11 +60,22 @@ final class WLP_Order_Logistics {
 			'shipping_cost'          => WLP_Meta_Keys::SHIPPING_COST,
 			'shipping_currency'      => WLP_Meta_Keys::SHIPPING_CURRENCY,
 			'shipment_id'            => WLP_Meta_Keys::SHIPMENT_ID,
+			'packaging_preset_id'    => WLP_Meta_Keys::PACKAGING_PRESET_ID,
+			'packaging_preset_name'  => WLP_Meta_Keys::PACKAGING_PRESET_NAME,
 			'expected_delivery_date' => WLP_Meta_Keys::EXPECTED_DELIVERY_DATE,
 			'preset_id'              => WLP_Meta_Keys::PRESET_ID,
 			'shipment_weight_kg'     => WLP_Meta_Keys::SHIPMENT_WEIGHT_KG,
 			'shipped_at'             => WLP_Meta_Keys::SHIPPED_AT,
 		);
+		$existing_shipment_id = self::string_meta( $order, WLP_Meta_Keys::SHIPMENT_ID, 'shipment_id' );
+		$incoming_shipment_id = self::metadata_string( $metadata, 'shipment_id' );
+
+		if ( '' !== $incoming_shipment_id && $incoming_shipment_id === $existing_shipment_id ) {
+			$existing_created_at = self::string_meta( $order, WLP_Meta_Keys::LABEL_CREATED_AT, 'label_created_at' );
+			if ( '' !== $existing_created_at ) {
+				$metadata['label_created_at'] = $existing_created_at;
+			}
+		}
 
 		foreach ( $map as $source => $meta_key ) {
 			if ( ! array_key_exists( $source, $metadata ) || null === $metadata[ $source ] ) {

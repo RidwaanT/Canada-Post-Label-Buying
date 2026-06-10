@@ -24,6 +24,8 @@ final class WLP_Meta_Keys {
 	public const SHIPPING_COST          = '_wlp_shipping_cost';
 	public const SHIPPING_CURRENCY      = '_wlp_shipping_currency';
 	public const SHIPMENT_ID            = '_wlp_shipment_id';
+	public const PACKAGING_PRESET_ID    = '_wlp_packaging_preset_id';
+	public const PACKAGING_PRESET_NAME  = '_wlp_packaging_preset_name';
 	public const EXPECTED_DELIVERY_DATE = '_wlp_expected_delivery_date';
 	public const LAST_POLLED_AT         = '_wlp_last_polled_at';
 	public const SHIPPED_AT             = '_wlp_shipped_at';

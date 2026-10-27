@@ -141,7 +141,7 @@ final class WLP_Manifest_Verifier {
   $data=self::public_snapshot();
   echo '<section class="notice notice-info inline"><h2>Automatic carrier verification</h2><p>Unresolved shipments are checked about every 15 minutes in background batches. Last run: '.esc_html($data['last_run'] ?? 'Waiting for the scheduled worker').'.</p>';
   if ($data['next_run'] === false) { echo '<p role="alert">No automatic verification action is scheduled. Review WooCommerce Scheduled Actions.</p>'; }
-  if ($data['last_run'] && strtotime($data['last_run'])<time()-1800) { echo '<p role="alert">Automatic verification is overdue. Review WooCommerce Scheduled Actions; saved evidence may be stale.</p>'; }
+  if (($data['last_run'] && strtotime($data['last_run'])<time()-1800) || (!$data['last_run'] && is_numeric($data['next_run']) && (int)$data['next_run']<time()-900)) { echo '<p role="alert">Automatic verification is overdue. Review WooCommerce Scheduled Actions; saved evidence may be stale.</p>'; }
   if ($data['error']) { echo '<p role="alert">'.esc_html($data['error']).'</p>'; }
   echo '<table class="widefat striped"><thead><tr><th>Order</th><th>Carrier status</th><th>Manifest / PO</th><th>Last successful check</th><th>Attention</th></tr></thead><tbody>';
   foreach ($data['parcels'] as $row) {

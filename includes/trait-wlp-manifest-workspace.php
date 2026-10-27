@@ -5,7 +5,7 @@ defined('ABSPATH') || exit;
 trait WLP_Manifest_Workspace {
  /** Projects journal and carrier evidence into unsubmitted parcels and submission history. */
  private static function workspace_rows(array $all, array $evidence): array {
-  $eligible=self::ready_candidates($all); $needs=[]; $submitted=[]; $review=[]; $seen=[];
+  $eligible=self::ready_candidates($all); $needs=[]; $submitted=[]; $review=[]; $seen=[]; $autoBilled=[];
   foreach ($all as $key=>$batch) {
    $pending=[]; $confirmed=[];
    foreach ($batch['shipments'] as $rid=>$shipment) {
@@ -13,6 +13,12 @@ trait WLP_Manifest_Workspace {
     $identity=WLP_Manifest_Verifier::key($batch['config'],$id,$pin); $seen[$identity]=true;
     $proof=$evidence['parcels'][$identity] ?? []; $state=$shipment['state'];
     $row=['batch'=>$key,'request'=>$rid,'order'=>(int)$shipment['order'],'package'=>$shipment['package'] ?? 'Whole order','tracking'=>$pin,'day'=>$batch['day'],'state'=>$state,'proof'=>$proof,'sandbox'=>!empty($batch['config']['sandbox'])];
+    if ($billing=WLP_Manifest_Reconciliation::lookup($batch['config'],$shipment)) {
+     $row['billing']=$billing;
+     $billingKey=$billing['customer'].'|'.$billing['manifest'];
+     if (!isset($autoBilled[$billingKey])) { $autoBilled[$billingKey]=['batch'=>'','day'=>$billing['notice_date'],'status'=>'auto_billed','parcels'=>[],'manifests'=>[],'config'=>[],'billing'=>$billing]; }
+     $autoBilled[$billingKey]['parcels'][]=$row;continue;
+    }
     if (in_array($state,['voided','rejected'],true)) { continue; }
     $awaiting=in_array($state,['created','transmitted'],true) && (in_array($rid,$batch['pending'] ?? [],true) || ($state==='created' && in_array($batch['state'],['awaiting_manifest','transmitting','uncertain'],true)));
     if ($awaiting) { $pending[]=$row; continue; }
@@ -27,6 +33,8 @@ trait WLP_Manifest_Workspace {
     if ($batch['day']>wp_date('Y-m-d')) { $row['token']='';$row['reason']='Available on the label dispatch date.'; }
     if (in_array($state,['requesting','uncertain','voiding','void_uncertain'],true)) {
      $review[]=['batch'=>$key,'day'=>$batch['day'],'status'=>'recovery','parcels'=>[$row],'manifests'=>[],'config'=>$batch['config']];
+    } elseif (!$row['token']) {
+     $review[]=['batch'=>$key,'day'=>$batch['day'],'status'=>'exception','parcels'=>[$row],'manifests'=>[],'config'=>$batch['config']];
     } else { $needs[]=$row; }
    }
    if ($pending) { $review[]=['batch'=>$key,'day'=>$batch['day'],'status'=>'pending','parcels'=>$pending,'manifests'=>[],'config'=>$batch['pending_handoff'] ?? $batch['config']]; }
@@ -40,9 +48,10 @@ trait WLP_Manifest_Workspace {
    $row=['batch'=>'','request'=>'','order'=>(int)($proof['order'] ?? 0),'package'=>'Saved label','tracking'=>$proof['tracking'] ?? '', 'day'=>'','state'=>'orphan','proof'=>$proof,'sandbox'=>!empty($proof['candidate']['config']['sandbox']),'token'=>'','reason'=>'No matching submission record. Review this order in Logistics.'];
    if (($proof['state'] ?? '')==='transmitted' && empty($proof['error'])) {
     $submitted[]=['batch'=>'','day'=>'','status'=>'external','parcels'=>[$row],'manifests'=>[],'config'=>[]];
-   } else { $needs[]=$row; }
+   } else { $review[]=['batch'=>'','day'=>'','status'=>'exception','parcels'=>[$row],'manifests'=>[],'config'=>[]]; }
   }
   usort($needs,static fn($a,$b)=>strcmp($b['day'],$a['day']) ?: $b['order']<=>$a['order']);
+  $submitted=array_merge($submitted,array_values($autoBilled));
   usort($submitted,static fn($a,$b)=>strcmp($b['day'],$a['day']));
   return ['needs'=>$needs,'submitted'=>$submitted,'review'=>$review];
  }
@@ -52,7 +61,7 @@ trait WLP_Manifest_Workspace {
   $url=$order instanceof WC_Order ? $order->get_edit_order_url() : admin_url('admin.php?page=wlp-logistics');
   echo '<a class="wlp-manifests-order" href="'.esc_url($url).'">#'.(int)$row['order'].'</a>';
   if ($row['sandbox']) { echo ' <span class="wlp-manifests-muted">Test</span>'; }
-  echo '<span class="wlp-manifests-secondary">'.esc_html(str_starts_with($row['package'],'primary:')?'Whole order':$row['package']).'</span>';
+  echo '<span class="wlp-manifests-secondary">'.esc_html(str_starts_with($row['package'],'primary:')?'Whole order':(str_starts_with($row['package'],'split:')?'Split parcel':$row['package'])).'</span>';
  }
  private static function workspace_destination(array $row): void {
   $order=wc_get_order($row['order']);
@@ -73,6 +82,8 @@ trait WLP_Manifest_Workspace {
   echo '<details class="wlp-manifests-detail"><summary>Details &amp; recovery</summary><div>';
   if ($row['tracking']) { echo '<p>Tracking: <span class="wlp-manifests-tracking">'.esc_html($row['tracking']).'</span></p>'; }
   $proof=$row['proof'];
+  if (!empty($row['reason'])) { echo '<p>'.esc_html($row['reason']).'</p>'; }
+  if (!empty($row['billing'])) { echo '<p>Auto-billed by Canada Post: '.esc_html($row['billing']['manifest']).' on '.esc_html($row['billing']['notice_date']).'. Carrier notice says no further submission is required. Penalty amount has not been separately reconciled.</p></div></details>';return; }
   echo '<p>Carrier: '.esc_html($proof['state'] ?? 'Not yet verified').'. Last successful check: '.esc_html($proof['checked_at'] ?? 'Not available').'.</p>';
   if (!empty($proof['error'])) { echo '<p>'.esc_html($proof['error']).'</p>'; }
   if ($row['batch']) {
@@ -95,7 +106,7 @@ trait WLP_Manifest_Workspace {
  private static function workspace_needs(array $rows,array $all): void {
   self::form('finish_day','','','wlp-manifest-selection');
   echo '<input type="hidden" name="pickup_day" value="'.esc_attr(wp_date('Y-m-d')).'"></form>';
-  if (!$rows) { echo '<div class="wlp-manifests-empty"><strong>No unsubmitted parcels in the saved records</strong><p>Any uncertain submissions remain in the review table below.</p></div>';return; }
+  if (!$rows) { echo '<div class="wlp-manifests-empty"><strong>No parcels ready for submission</strong><p>Any uncertain submissions remain in the review table below.</p></div>';return; }
   echo '<div class="wlp-manifests-toolbar"><button type="button" class="button" data-pick-all>Select eligible on this page</button><button type="button" class="button" data-pick-none>Clear</button><span data-pick-count aria-live="polite">0 parcels selected</span></div>';
   echo '<table class="widefat wlp-manifests-table"><caption class="screen-reader-text">Unsubmitted parcels</caption><thead><tr><th scope="col">Select</th><th scope="col">Date</th><th scope="col">Order</th><th scope="col">Destination / service</th><th scope="col">Tracking</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead><tbody>';
   foreach ($rows as $i=>$row) {
@@ -112,13 +123,13 @@ trait WLP_Manifest_Workspace {
   if (!$rows) { echo '<div class="wlp-manifests-empty">No confirmed manifests in the saved records.</div>';return; }
   echo '<table class="widefat wlp-manifests-table"><caption class="screen-reader-text">'.($review?'Submissions needing confirmation or review':'Confirmed manifests').'</caption><thead><tr><th scope="col">Date</th><th scope="col">Manifest</th><th scope="col">Parcels / orders</th><th scope="col">Handoff</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead><tbody>';
   foreach ($rows as $group) {
-   $references=array_column($group['manifests'],'po');
+   $references=!empty($group['billing']) ? [$group['billing']['manifest']] : array_column($group['manifests'],'po');
    if (!$references) { $references=array_values(array_unique(array_filter(array_map(static fn($r)=>$r['proof']['po'] ?? '',$group['parcels'])))); }
-   $labels=['pending'=>'Awaiting confirmation','mismatch'=>'Carrier mismatch','recovery'=>'Needs recovery','external'=>'Carrier confirmed','confirmed'=>'Confirmed'];
+   $labels=['auto_billed'=>'Auto-billed by Canada Post','exception'=>'Needs review','pending'=>'Awaiting confirmation','mismatch'=>'Carrier mismatch','recovery'=>'Needs recovery','external'=>'Carrier confirmed','confirmed'=>'Confirmed'];
    echo '<tr><td data-label="Date">'.esc_html($group['day'] ?: 'Not recorded').'</td><td data-label="Manifest" class="wlp-manifests-tracking">'.esc_html($references ? implode(', ',$references) : 'Not confirmed').'</td><td data-label="Parcels / orders">'.count($group['parcels']).' parcel(s)<span class="wlp-manifests-secondary">';
    $ids=array_values(array_unique(array_column($group['parcels'],'order')));
    echo esc_html(implode(', ',array_map(static fn($id)=>'#'.$id,array_slice($ids,0,4))));
-   if (count($ids)>4) { echo ' +'.(count($ids)-4).' more'; }echo '</span></td><td data-label="Handoff">'.esc_html(!empty($group['handoff_text']) ? $group['handoff_text'] : ($group['config'] ? WLP_Contract_Handoff::describe($group['config']) : 'Not recorded')).'</td><td data-label="Status"><span class="wlp-manifests-badge '.($review?'is-warning':'is-ready').'">'.esc_html($labels[$group['status']]).'</span>';
+   if (count($ids)>4) { echo ' +'.(count($ids)-4).' more'; }echo '</span></td><td data-label="Handoff">'.esc_html(!empty($group['handoff_text']) ? $group['handoff_text'] : ($group['config'] ? WLP_Contract_Handoff::describe($group['config']) : 'Not recorded')).'</td><td data-label="Status"><span class="wlp-manifests-badge '.(($review || $group['status']==='auto_billed')?'is-warning':'is-ready').'">'.esc_html($labels[$group['status']]).'</span>';
    if ($review) { echo '<span class="wlp-manifests-secondary">Do not resubmit.</span>'; }
    echo '</td><td data-label="Actions">';
    $batch=$group['batch'] ? $all[$group['batch']] : null;
@@ -131,7 +142,7 @@ trait WLP_Manifest_Workspace {
     echo '<a class="button" target="_blank" rel="noopener" href="'.esc_url($url).'">PDF '.esc_html($manifest['po']).'</a> ';
    }
    echo '<details class="wlp-manifests-detail"><summary>Parcels &amp; details</summary><div>';
-   if (!$group['manifests'] && !$review) { echo '<p>Carrier transmission is confirmed. No local manifest PDF is linked.</p>'; }
+   if (!$group['manifests'] && !$review && $group['status']!=='auto_billed') { echo '<p>Carrier transmission is confirmed. No local manifest PDF is linked.</p>'; }
    foreach ($group['parcels'] as $row) { echo '<div class="wlp-manifests-parcel">';self::workspace_order($row);echo '<p>';self::workspace_destination($row);echo '</p>';self::workspace_detail($row,$all);echo '</div>'; }
    // Preserve cleanup of terminal labels without expanding the normal workspace.
    if ($batch && !$review) { foreach ($batch['shipments'] as $rid=>$shipment) { if ($shipment['state']==='voided') { echo '<p>Voided label · Order #'.(int)$shipment['order'].'</p>';self::workspace_actions($group['batch'],$rid,$batch,$shipment); } } }
@@ -148,13 +159,13 @@ trait WLP_Manifest_Workspace {
   $stale=!$health['last_run'] || strtotime($health['last_run'])<time()-1800 || !empty($health['error']) || $health['next_run']===false;
   echo '<p class="wlp-manifests-scheduler'.($stale?' is-warning':'').'">'.($stale?'Verification needs attention':'Automatic verification active').' · Last worker run: '.esc_html($health['last_run'] ?? 'Not yet run').'</p>';
   echo '<nav class="nav-tab-wrapper" aria-label="Manifest views">';
-  foreach (['needs'=>'Needs submission','submitted'=>'Submitted'] as $value=>$label) { echo '<a class="nav-tab'.($value===$tab?' nav-tab-active':'').'"'.($value===$tab?' aria-current="page"':'').' href="'.esc_url(self::workspace_url($value)).'">'.esc_html($label).' <span class="wlp-manifests-tab-count">'.count($data[$value==='needs'?'needs':'submitted']).'</span></a>'; }echo '</nav>';
+  foreach (['needs'=>'Needs submission','submitted'=>'Submitted / Auto-billed'] as $value=>$label) { echo '<a class="nav-tab'.($value===$tab?' nav-tab-active':'').'"'.($value===$tab?' aria-current="page"':'').' href="'.esc_url(self::workspace_url($value)).'">'.esc_html($label).' <span class="wlp-manifests-tab-count">'.count($data[$value==='needs'?'needs':'submitted']).'</span></a>'; }echo '</nav>';
   if ($tab==='needs') {
-   if ($data['review']) { echo '<p class="wlp-manifests-review-link"><a href="#wlp-manifest-review">'.count($data['review']).' submission(s) awaiting confirmation or needing review below</a></p>'; }
+   if ($data['review']) { echo '<p class="wlp-manifests-review-link"><a href="#wlp-manifest-review">'.count($data['review']).' record(s) awaiting confirmation or needing review below</a></p>'; }
    self::workspace_needs(array_slice($list,($page-1)*20,20),$all);self::workspace_pagination('needs',$page,count($list));
    if ($data['review']) {
     $review_page=min(max(1,$review_page),max(1,(int)ceil(count($data['review'])/20)));
-    echo '<section id="wlp-manifest-review" class="wlp-manifests-review"><h2>Awaiting confirmation / Needs review <span class="wlp-manifests-tab-count">'.count($data['review']).'</span></h2><p>Check or recover the existing submission. These parcels cannot be selected again.</p>';
+    echo '<section id="wlp-manifest-review" class="wlp-manifests-review"><h2>Awaiting confirmation / Needs review <span class="wlp-manifests-tab-count">'.count($data['review']).'</span></h2><p>These parcels need review, not a new submission. Expand a row for the reason and recovery options.</p>';
     self::workspace_submissions(array_slice($data['review'],($review_page-1)*20,20),$all,true);
     echo '<nav class="wlp-manifests-pagination" aria-label="Review pages"><span>Page '.$review_page.' of '.max(1,(int)ceil(count($data['review'])/20)).'</span>';
     foreach ([$review_page-1=>'Previous',$review_page+1=>'Next'] as $target=>$label) { if ($target>=1 && $target<=ceil(count($data['review'])/20)) { echo '<a class="button" href="'.esc_url(add_query_arg('review_page',$target,self::workspace_url('needs',$page)).'#wlp-manifest-review').'">'.$label.'</a>'; } }

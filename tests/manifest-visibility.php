@@ -61,7 +61,7 @@ $all['confirmed']['manifests']=[['po'=>'TEST-PO','artifact'=>'https://example.co
 $all['pending']['manifest_links']=['https://example.com/pending'];
 $project=new ReflectionMethod(WLP_Contract_Shipping::class,'workspace_rows');
 $data=$project->invoke(null,$all,[]);
-check(count($data['review'])===1,'Awaiting submissions must be in the review table.');
+check(count($data['review'])===5,'Awaiting submissions must be in the review table.');
 check(count($data['submitted'])===1,'Only confirmed submissions belong in history.');
 check(count(array_filter($data['needs'],static fn($r)=>!empty($r['token'])))===1,'Only the existing eligible parcel is selectable.');
 $proofKey=WLP_Manifest_Verifier::key($all['ready']['config'],'test-3','TEST-3');
@@ -71,7 +71,7 @@ $uncertain=batch(3,'uncertain');$recovery=$project->invoke(null,['uncertain'=>$u
 check(!$recovery['needs'] && count($recovery['review'])===1,'Uncertain label requests stay in the visible review table.');
 $conflictKey=WLP_Manifest_Verifier::key($all['confirmed']['config'],'test-4','TEST-4');
 $conflict=$project->invoke(null,$all,['parcels'=>[$conflictKey=>['state'=>'created']]]);
-check(count($conflict['review'])===2,'Carrier/local disagreement remains visible for review without resubmission.');
+check(count($conflict['review'])===6,'Carrier/local disagreement remains visible for review without resubmission.');
 $render=new ReflectionMethod(WLP_Contract_Shipping::class,'workspace_render');
 ob_start();$render->invoke(null,$all,[],'needs',1);$html=ob_get_clean();
 check(str_contains($html,'Awaiting confirmation / Needs review') && str_contains($html,'#1') && str_contains($html,'#2'),'Missing and pending manifests remain visible on the main page.');

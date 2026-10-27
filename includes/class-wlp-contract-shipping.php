@@ -5,6 +5,7 @@ defined( 'ABSPATH' ) || exit;
 require_once __DIR__ . '/class-wlp-contract-handoff.php';
 require_once __DIR__ . '/trait-wlp-manifest-workspace.php';
 require_once __DIR__ . '/class-wlp-manifest-verifier.php';
+require_once __DIR__ . '/class-wlp-manifest-reconciliation.php';
 require_once __DIR__ . '/class-wlp-contract-xml.php';
 require_once __DIR__ . '/class-wlp-contract-operations.php';
 require_once __DIR__ . '/class-wlp-manifest-quick-submit.php';
@@ -51,7 +52,7 @@ final class WLP_Contract_Shipping {
 		$review = 0;
 		foreach ( $all as $key => $batch ) {
 			foreach ( $batch['shipments'] as $rid => $shipment ) {
-				if ( $batch['state'] === 'manifest_ready' || in_array( $shipment['state'], array( 'transmitted', 'voided', 'rejected' ), true ) ) { continue; }
+				if ( WLP_Manifest_Reconciliation::lookup($batch['config'],$shipment) || $batch['state'] === 'manifest_ready' || in_array( $shipment['state'], array( 'transmitted', 'voided', 'rejected' ), true ) ) { continue; }
 				if ( isset( $ready[ hash( 'sha256', $key . '|' . $rid ) ] ) ) { continue; }
 				if ( in_array( $rid, $batch['pending'] ?? array(), true ) && in_array( $batch['state'], array( 'awaiting_manifest', 'transmitting', 'uncertain' ), true ) ) { ++$pending; continue; }
 				++$review;
@@ -65,7 +66,7 @@ final class WLP_Contract_Shipping {
 		$issues = array();
 		foreach ( $all as $key => $batch ) {
 			foreach ( $batch['shipments'] as $rid => $shipment ) {
-				if ( $batch['state'] === 'manifest_ready' || in_array( $shipment['state'], array( 'transmitted', 'voided', 'rejected' ), true ) ) { continue; }
+				if ( WLP_Manifest_Reconciliation::lookup($batch['config'],$shipment) || $batch['state'] === 'manifest_ready' || in_array( $shipment['state'], array( 'transmitted', 'voided', 'rejected' ), true ) ) { continue; }
 				if ( isset( $ready[ hash( 'sha256', $key . '|' . $rid ) ] ) ) { continue; }
 				$pending = in_array( $rid, $batch['pending'] ?? array(), true ) && in_array( $batch['state'], array( 'awaiting_manifest', 'transmitting', 'uncertain' ), true );
 				$reason = self::hold_reason( $shipment );
@@ -213,7 +214,7 @@ final class WLP_Contract_Shipping {
 		foreach ( $all as $key => $batch ) {
 			if ( $batch['state'] !== 'open' || array_filter( $batch['shipments'], static fn( $s ) => self::unresolved( $s['state'] ) ) ) { continue; }
 			foreach ( $batch['shipments'] as $rid => $shipment ) {
-				if ( $shipment['state'] !== 'created' || self::hold_reason( $shipment ) ) { continue; }
+				if ( WLP_Manifest_Reconciliation::lookup($batch['config'],$shipment) || $shipment['state'] !== 'created' || self::hold_reason( $shipment ) ) { continue; }
 				$order = wc_get_order( $shipment['order'] );
 				$package = 'Whole order';
 				if ( str_starts_with( $shipment['package'] ?? '', 'split:' ) ) {

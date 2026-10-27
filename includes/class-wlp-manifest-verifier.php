@@ -13,6 +13,8 @@ final class WLP_Manifest_Verifier {
   add_action('init', array(self::class, 'schedule'), 20);
   add_action(self::HOOK, array(self::class, 'run'));
   add_action('rest_api_init', static function(): void {
+   require_once __DIR__.'/class-wlp-manifest-reconciliation.php';
+   register_rest_route('wc/v3/wlp-manifests', '/auto-billed', array('methods'=>'POST', 'permission_callback'=>static fn()=>current_user_can('manage_woocommerce'), 'callback'=>array('WLP_Manifest_Reconciliation','record')));
    register_rest_route('wc/v3/wlp-manifests', '/status', array('methods'=>'GET', 'permission_callback'=>static fn()=>current_user_can('manage_woocommerce'), 'callback'=>static fn()=>rest_ensure_response(self::public_snapshot())));
    register_rest_route('wc/v3/wlp-manifests', '/orders/(?P<id>\d+)', array('methods'=>'GET', 'permission_callback'=>static fn()=>current_user_can('manage_woocommerce'), 'callback'=>array(self::class,'order_status')));
   });
@@ -114,6 +116,7 @@ final class WLP_Manifest_Verifier {
    uasort($candidates,static fn($a,$b)=>($data['parcels'][self::key($a['config'],$a['id'],$a['pin'])]['attempted_at'] ?? 0)<=>($data['parcels'][self::key($b['config'],$b['id'],$b['pin'])]['attempted_at'] ?? 0));
    $count=0; $started=time();
    foreach ($candidates as $key=>$candidate) {
+    if (get_option('wlp_auto_billed_'.$key,[])) { continue; }
     $old=$data['parcels'][$key] ?? array();
     if ($old) {
      $old['journal']=$candidate['journal']; $old['expected']=$candidate['expected'];

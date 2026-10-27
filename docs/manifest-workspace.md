@@ -10,3 +10,22 @@ Designed with AGY Gemini 4 Argon (High), then adapted to the existing WordPress 
 - Details and recovery stay inside row disclosures. No new carrier action, cron change, automatic submission or order-status change is introduced.
 
 Checks: PHP syntax; `php tests/manifest-visibility.php`; `php tests/manifest-verification.php`; `node tests/manifest-form.cjs`; synthetic desktop/mobile browser checks including actual HTML FormData, selection, readiness reset, review placement, history and overflow.
+# Auto-billed reconciliation
+
+The submission queue contains only selectable parcels. Held, shipped, cancelled,
+or uncertain records remain in the lower review table on the same page.
+
+Reviewed Canada Post auto-billing notices can be recorded through manager-authenticated
+`POST /wc/v3/wlp-manifests/auto-billed` with `customer`, `tracking`, `order` (integer),
+`manifest`, `notice_date` (YYYY-MM-DD), and the source Gmail `message_id`.
+This is an operator-attested evidence import, not an email authenticity checker.
+Only a unique production journal identity can match. Conflicting imports return 409;
+identical retries are idempotent. Evidence is stored in non-autoloaded per-identity
+WordPress options with the recording user and timestamp, separate from the journal.
+
+Matched parcels appear in history grouped by carrier auto-billed manifest. They are
+excluded from selection, direct transmission, reminders and repeated verification.
+Unmatched parcels in the same batch stay under review. No carrier request is sent,
+no delivery status is changed, and no loss amount or accounting write-off is inferred.
+Source notice attachments and fee invoices must establish any penalty-only amount.
+

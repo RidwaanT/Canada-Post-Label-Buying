@@ -174,6 +174,7 @@ trait WLP_Contract_Operations {
 			}
 			foreach ( $selected as $rid ) {
 				$s = $b['shipments'][ $rid ] ?? null;
+				if ($s && WLP_Manifest_Reconciliation::lookup($b['config'],$s)) { throw new RuntimeException('Canada Post already auto-billed this parcel. Do not resubmit it.'); }
 				if ( ! $s || $s['state'] !== 'created' ) {
 					throw new RuntimeException( 'Selection changed. Reload Shipping manifests.' );
 				}$reason = self::hold_reason( $s );

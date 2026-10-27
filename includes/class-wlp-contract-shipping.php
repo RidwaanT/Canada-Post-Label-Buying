@@ -3,12 +3,14 @@
 declare(strict_types=1);
 defined( 'ABSPATH' ) || exit;
 require_once __DIR__ . '/class-wlp-contract-handoff.php';
+require_once __DIR__ . '/trait-wlp-manifest-workspace.php';
 require_once __DIR__ . '/class-wlp-manifest-verifier.php';
 require_once __DIR__ . '/class-wlp-contract-xml.php';
 require_once __DIR__ . '/class-wlp-contract-operations.php';
 require_once __DIR__ . '/class-wlp-manifest-quick-submit.php';
 final class WLP_Contract_Shipping {
 	use WLP_Contract_XML;
+	use WLP_Manifest_Workspace;
 	use WLP_Contract_Operations;
 	use WLP_Manifest_Quick_Submit;
 
@@ -28,6 +30,11 @@ final class WLP_Contract_Shipping {
 		add_action( 'wp_ajax_wlp_manifest_quick_submit', array( __CLASS__, 'quick_submit' ) );
 	}
 	public static function reminder_assets(): void {
+		if (current_user_can('manage_woocommerce') && ($_GET['page'] ?? '') === 'wlp-contract-manifests') {
+            wp_enqueue_style('wlp-manifests', WLP_URL . 'assets/css/manifests.css', array(), WLP_VERSION);
+            wp_enqueue_script('wlp-manifests', WLP_URL . 'assets/js/manifests.js', array(), WLP_VERSION, true);
+            return;
+        }
 		if ( ! current_user_can( 'manage_woocommerce' ) || ( $_GET['page'] ?? '' ) !== 'wlp-logistics' || ( $_GET['view'] ?? '' ) === 'settings' ) { return; }
 		wp_enqueue_style( 'wlp-manifest-reminder', WLP_URL . 'assets/css/manifest-reminder.css', array(), WLP_VERSION );
 		wp_enqueue_script( 'wlp-manifest-reminder', WLP_URL . 'assets/js/manifest-reminder.js', array( 'wlp-admin' ), WLP_VERSION, true );
@@ -157,8 +164,8 @@ final class WLP_Contract_Shipping {
 		wp_safe_redirect( admin_url( 'admin.php?page=wlp-contract-manifests' ) );
 		exit;
 	}
-	private static function form( string $operation, string $batch = '', string $request = '' ): void {
-		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="margin:8px 0">';
+	private static function form( string $operation, string $batch = '', string $request = '', string $form_id = '' ): void {
+		echo '<form'.($form_id ? ' id="'.esc_attr($form_id).'"' : '').' method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" style="margin:8px 0">';
 		wp_nonce_field( 'wlp_contract_action' );
 		foreach ( array(
 			'action'    => 'wlp_contract_action',
@@ -288,133 +295,13 @@ final class WLP_Contract_Shipping {
 		return $totals;
 	}
 
-	private static function finish_day_panel( array $all ): void {
-		$rows = self::ready_candidates( $all );
-		$totals = self::pickup_summary( $all );
-		$summary = self::reminder_summary( $all );
-		$issues = self::manifest_issues( $all );
-		echo '<section class="wlp-finish-day" style="background:#fff;border:1px solid #ccd0d4;padding:20px;margin:16px 0;max-width:1100px"><h2>1. Add ready parcels to today’s manifest</h2><p>Pick the boxes that are packed and labelled. Older unused labels are included below so nothing is missed. Leave any parcel you are holding unchecked.</p>';
-		echo '<div role="status" style="background:#eef7f0;border:1px solid #a8cfb0;padding:16px;margin:16px 0"><h2 style="margin:0 0 8px">' . (int) $totals['pickup'] . ' package(s) confirmed for pickup</h2><p style="margin:0">' . (int) $summary['pending'] . ' awaiting carrier confirmation · ' . (int) $totals['remaining'] . ' eligible to submit</p><p style="margin:8px 0 0">Count the physical boxes before the driver arrives. This total includes confirmed pickup parcels not yet marked shipped. Pickup booking is separate.</p></div>';
-		if ( $issues ) {
-			echo '<div class="notice notice-warning inline" role="alert"><h3>' . count( $issues ) . ' parcel(s) need manifest attention</h3><p>Shipping or delivery status does not confirm an electronic manifest. Review these saved records in the expanded history below. Check the carrier before submitting an already handed-over parcel.</p><table class="widefat striped"><thead><tr><th>Order / package</th><th>Tracking</th><th>Action needed</th></tr></thead><tbody>';
-			foreach ( $issues as $issue ) {
-				echo '<tr><td>#' . (int) $issue['order'] . ' / ' . esc_html( $issue['package'] ) . '</td><td>' . esc_html( $issue['tracking'] ) . '</td><td>' . esc_html( $issue['reason'] ) . '</td></tr>';
-			}
-			echo '</tbody></table></div>';
-		}
-		if ( $totals['dropoff'] ) { echo '<p>' . (int) $totals['dropoff'] . ' other parcel(s) confirmed for drop-off, excluded from the pickup total.</p>'; }
-		foreach ( $all as $key => $batch ) {
-			if ( ! empty( $batch['manifest_links'] ) ) { self::form( 'refresh', $key ); echo '<p>Canada Post confirmation is pending. Refresh this existing submission; do not submit it again.</p><button class="button button-primary">Refresh pending manifest</button></form>'; }
-		}
-		if ( $rows ) {
-			self::form( 'finish_day' );
-			echo '<input type="hidden" name="pickup_day" value="' . esc_attr( wp_date( 'Y-m-d' ) ) . '"><p><label>Pickup / drop-off location<br><select name="handoff_id" style="max-width:100%" required>';
-			foreach ( WLP_Contract_Handoff::locations() as $id => $point ) {
-				echo '<option value="' . esc_attr( $id ) . '"' . selected( $id, WLP_Contract_Handoff::DEFAULT_ID, false ) . '>' . esc_html( WLP_Contract_Handoff::describe( $point ) ) . '</option>';
-			}
-			echo '</select></label></p><p><button type="button" class="button" data-pick-all>Select all eligible parcels</button> <button type="button" class="button" data-pick-none>Clear selection</button> <strong data-pick-count aria-live="polite">0 parcels selected</strong></p><div style="overflow-x:auto"><table class="widefat striped"><thead><tr><th>Ready</th><th>Order</th><th>Package</th><th>Tracking</th><th>Label dispatch date</th></tr></thead><tbody>';
-			foreach ( $rows as $token => $row ) {
-				echo '<tr><td><input type="checkbox" name="parcels[]" value="' . esc_attr( $token ) . '" aria-label="Add order ' . (int) $row['order'] . ' ' . esc_attr( $row['package'] ) . '"></td><td>#' . (int) $row['order'] . '</td><td>' . esc_html( $row['package'] ) . '</td><td>' . esc_html( $row['tracking'] ) . '</td><td>' . esc_html( $row['day'] ) . '</td></tr>';
-			}
-			echo '</tbody></table></div><p><label><input type="checkbox" name="ready" value="yes" required> These selected parcels are packed, labelled and ready for handoff today (' . esc_html( wp_date( 'F j, Y' ) ) . ') at the selected location.</label></p><button class="button button-primary button-hero" data-finish-submit>Finish shipping day</button><p class="description">Sends only your selection to Canada Post and checks for manifest confirmation. Does not book pickup or mark parcels shipped. If pickup is tomorrow, submit tomorrow before collection.</p></form>';
-		} else { echo '<h3>No more eligible parcels to submit</h3><p>' . ( $summary['pending'] ? 'Your selected parcels have been submitted. Refresh the pending confirmation above before handoff.' : ( $issues ? 'Unresolved manifest records still need attention below.' : 'No unshipped parcels are eligible in the saved shipment records. Check Canada Post if a shipment is missing here.' ) ) . ' Cancelled, held and already shipped labels are excluded. Any issues remain in manifest history below.</p>'; }
-		echo '<h2>2. Book or check pickup</h2><p>Pickup location: <strong>260 King St E, Hamilton, ON L8N 1B7</strong>. A manifest does not book a driver. Choose a one-time pickup, or use your existing recurring pickup.</p><a class="button button-secondary" target="_blank" rel="noopener" href="https://www.canadapost-postescanada.ca/pup-rdc/en/request-pickup">Book / check Canada Post pickup</a><p>Pickup booking status is not connected here. Keep Canada Post’s booking confirmation.</p><h2>3. Hand over the parcels</h2><p>Wait for confirmed manifests below, then hand the selected boxes to Canada Post. Mark shipped in Logistics after collection. Domestic paper manifests are optional when a parcel can be scanned; otherwise print the Letter PDF.</p>';
-		foreach ( $all as $batch ) {
-			foreach ( $batch['manifests'] ?? array() as $manifest ) {
-				if ( substr( $manifest['confirmed_at'] ?? '', 0, 10 ) === gmdate( 'Y-m-d' ) ) { echo '<p><strong>Confirmed manifest: ' . esc_html( $manifest['po'] ) . '</strong>. PDF available in manifest history below.</p>'; }
-			}
-		}
-		echo '</section><script>(function(){const box=document.querySelector(".wlp-finish-day"),input=box.querySelector("input[name=pickup_day]"),form=input?.form;if(!form)return;const picks=[...form.querySelectorAll("input[name=\"parcels[]\"]")],ready=form.elements.ready,button=form.querySelector("[data-finish-submit]");function update(){const count=picks.filter(p=>p.checked).length;form.querySelector("[data-pick-count]").textContent=count+" parcel"+(count===1?"":"s")+" selected";button.disabled=!count||!ready.checked;}form.querySelector("[data-pick-all]").addEventListener("click",()=>{picks.forEach(p=>p.checked=true);ready.checked=false;update();});form.querySelector("[data-pick-none]").addEventListener("click",()=>{picks.forEach(p=>p.checked=false);ready.checked=false;update();});form.addEventListener("change",e=>{if(e.target!==ready)ready.checked=false;update();});form.addEventListener("submit",()=>{button.disabled=true;button.textContent="Submitting manifest…";});update();})();</script>';
-	}
-
-	/** Renders parcel selection, carrier confirmation and safe recovery actions. */
+	/** Renders the compact workspace without changing any carrier operation. */
 	public static function page(): void {
 		self::authorize();
-		echo '<div class="wrap"><h1>Finish shipping day</h1><p>Select ready parcels, submit the manifest before pickup, then hand them to the driver.</p><p><a href="' . esc_url( admin_url( 'admin.php?page=wlp-logistics' ) ) . '">Back to Logistics</a></p>';
-		if ( get_option( self::LOCK ) ) {
-			self::form( 'unlock' );
-			echo '<p>An operation is running or was interrupted. After 15 minutes, release its lock to use recovery. This does not resend any carrier request.</p><button class="button">Release interrupted operation lock</button></form>';}
-		$quick_job = get_option( self::QUICK_JOB, array() );
-		if ( $quick_job || get_option( self::QUICK_LOCK ) || get_option( 'wlp_manifest_quick_worker_lock' ) ) {
-			echo '<section><h2>Quick submit status</h2><p>' . esc_html( $quick_job['message'] ?? 'A manifest queue operation was interrupted.' ) . '</p>';
-			if ( in_array( $quick_job['state'] ?? '', array( 'queued', 'processing', 'awaiting_confirmation' ), true ) || get_option( self::QUICK_LOCK ) || get_option( 'wlp_manifest_quick_worker_lock' ) ) {
-				self::form( 'release_quick_job' );
-				echo '<p>If this job was interrupted, wait 15 minutes, release it, then review the existing carrier records. This never resends a manifest.</p><button class="button">Release interrupted quick-submit job</button></form>';
-			}
-			echo '</section>';
-		}
-		$all = array_reverse( self::read(), true );
-		WLP_Manifest_Verifier::render();
-		self::finish_day_panel( $all );
-		echo '<details' . ( self::manifest_issues( $all ) ? ' open' : '' ) . '><summary style="font-size:18px;cursor:pointer">Manifest history, pending confirmations and recovery</summary>';
-		if ( ! $all ) {
-			echo '<p>No contract labels yet. Save your customer number, agreement, API credentials and pickup/drop-off details in Logistics settings.</p>';
-		}
-		foreach ( $all as $key => $b ) {
-			echo '<section style="background:white;border:1px solid #ccd0d4;padding:16px;margin:16px 0;max-width:1100px"><h2>Dispatch ' . esc_html( $b['day'] ) . ' · ' . esc_html( str_replace( '_', ' ', $b['state'] ) ) . '</h2><p>' . esc_html( $b['config']['sandbox'] ? 'SANDBOX — test labels' : 'Production' ) . '</p>';
-			if ( ! empty( $b['pending_handoff'] ) ) {
-				echo '<p><strong>Submitted handoff:</strong> ' . esc_html( WLP_Contract_Handoff::describe( $b['pending_handoff'] ) ) . '</p>';
-			}
-			$blocked = false;
-			foreach ( $b['shipments'] as $s ) {
-				$blocked = $blocked || self::unresolved( $s['state'] );
-			}
-			$selectable = $b['state'] === 'open' && ! $blocked;
-			if ( $selectable ) {
-				self::form( 'transmit', $key );
-				echo '<p><label><strong>Pickup / drop-off location</strong><br><select name="handoff_id" style="max-width:100%" required>';
-				foreach ( WLP_Contract_Handoff::locations() as $id => $point ) {
-					echo '<option value="' . esc_attr( $id ) . '"' . ( $id === WLP_Contract_Handoff::DEFAULT_ID ? ' selected' : '' ) . '>' . esc_html( WLP_Contract_Handoff::describe( $point ) ) . '</option>';
-				}
-				echo '</select></label></p><p class="description">Choose where these parcels will actually be handed to Canada Post. Your sender/return and manifest address stay unchanged. Changing the shipping point can adjust the final postage. Pickup must still be booked separately.</p>';
-			}
-			echo '<table class="widefat striped"><thead><tr><th>Ready</th><th>Order / package</th><th>Tracking</th><th>Status / hold reason</th></tr></thead><tbody>';
-			foreach ( $b['shipments'] as $rid => $s ) {
-				$reason = $s['state'] === 'created' ? self::hold_reason( $s ) : '';
-				echo '<tr><td>';
-				if ( $selectable && $s['state'] === 'created' && ! $reason ) {
-							echo '<input type="checkbox" name="selected[]" value="' . esc_attr( $rid ) . '" aria-label="Select order ' . (int) $s['order'] . '">';
-				}
-				echo '</td><td>#' . (int) $s['order'] . ' · ' . esc_html( $s['package'] ?? 'Earlier label' ) . '</td><td>' . esc_html( $s['result']['tracking_number'] ?? 'Pending' ) . '</td><td>' . esc_html( str_replace( '_', ' ', $s['state'] ) ) . ( $reason ? ' — ' . esc_html( $reason ) : '' ) . '</td></tr>';
-			}echo '</tbody></table>';
-			if ( $selectable ) {
-				echo '<p><label><input type="checkbox" name="ready" value="yes" required> The selected parcels are ready for handoff at the selected location.</label></p><button class="button button-primary">Transmit selected parcels electronically</button></form>';
-			}
-			if ( ! empty( $b['manifest_links'] ) ) {
-				self::form( 'refresh', $key );
-				echo '<button class="button button-primary">Refresh manifest confirmation</button></form>';} elseif ( in_array( $b['state'], array( 'uncertain', 'transmitting' ), true ) ) {
-							self::form( 'recover_transmission', $key );
-							echo '<button class="button">Recover transmission (read only)</button></form>';}
-				foreach ( $b['manifests'] as $i => $m ) {
-					$url = wp_nonce_url(
-						add_query_arg(
-							array(
-								'action' => 'wlp_contract_manifest_pdf',
-								'batch'  => $key,
-								'index'  => $i,
-							),
-							admin_url( 'admin-post.php' )
-						),
-						'wlp_contract_manifest_pdf'
-					);
-					echo '<p><strong>Confirmed electronic manifest ' . esc_html( $m['po'] ) . '</strong> · ' . esc_html( WLP_Contract_Handoff::describe( $m['handoff'] ?? $b['config'] ) ) . ' · <a target="_blank" rel="noopener" href="' . esc_url( $url ) . '">Open / print Letter PDF</a></p>';}
-				echo '<details><summary>Label recovery and void controls</summary><p>Recover interrupted purchases before buying again. Void unused labels before replacing them. Keep the request ID when contacting Canada Post.</p>';
-				foreach ( $b['shipments'] as $rid => $s ) {
-					echo '<p><strong>Order #' . (int) $s['order'] . '</strong> · Request ' . esc_html( $rid ) . '</p>';
-					if ( in_array( $s['state'], array( 'requesting', 'uncertain' ), true ) ) {
-						self::form( 'recover_label', $key, $rid );
-						echo '<button class="button">Recover carrier label (read only)</button></form>';}
-					if ( in_array( $s['state'], array( 'created', 'transmitted', 'voided' ), true ) ) {
-						self::form( 'restore', $key, $rid );
-						echo '<button class="button">' . ( $s['state'] === 'voided' ? 'Clear confirmed void from order' : 'Restore saved label to order/package' ) . '</button></form>';}
-					if ( $s['state'] === 'created' && $b['state'] === 'open' ) {
-							self::form( 'void', $key, $rid );
-							echo '<label><input type="checkbox" name="confirm_void" value="yes" required> This unused label should be voided.</label> <button class="button">Void label</button></form>';}
-					if ( in_array( $s['state'], array( 'voiding', 'void_uncertain' ), true ) ) {
-						self::form( 'recover_void', $key, $rid );
-						echo '<p>Void outcome needs confirmation. Do not reuse this label or repurchase.</p><button class="button">Check void outcome (read only)</button></form>';}
-				}echo '</details><p><small>Group: ' . esc_html( $key ) . '</small></p></section>';
-		}echo '</details></div>';
-		echo '<script>document.querySelectorAll("form select[name=handoff_id]").forEach(function(select){select.form.addEventListener("change",function(event){if(event.target === select || event.target.name === "selected[]"){select.form.elements.ready.checked=false;}});});</script>';
+		$tab=isset($_GET['manifest_tab']) && $_GET['manifest_tab']==='submitted' ? 'submitted' : 'needs';
+		$page=isset($_GET['manifest_page']) && is_scalar($_GET['manifest_page']) ? max(1,(int)$_GET['manifest_page']) : 1;
+		$review_page=isset($_GET['review_page']) && is_scalar($_GET['review_page']) ? max(1,(int)$_GET['review_page']) : 1;
+		$evidence=get_option('wlp_manifest_verification_v1',array());
+		self::workspace_render(self::read(),is_array($evidence)?$evidence:array(),$tab,$page,$review_page);
 	}
 }

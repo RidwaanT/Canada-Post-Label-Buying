@@ -1,0 +1,94 @@
+/* WordPress Admin Shipping Manifests - Restrained Native Styling */
+.wlp-manifests {
+  max-width: 1400px;
+}
+
+.wlp-manifests-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+}
+
+.wlp-manifests-scheduler {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #50575e;
+  background: #fff;
+  border: 1px solid #dcdcde;
+  border-left: 3px solid #00a32a;
+  padding: 4px 10px;
+  border-radius: 2px;
+}
+
+.wlp-manifests-scheduler.is-warning {
+  border-left-color: #dba617;
+  color: #1d2327;
+}
+
+.wlp-manifests-scheduler.is-error {
+  border-left-color: #d63638;
+  color: #1d2327;
+}
+
+.wlp-manifests .nav-tab-wrapper {
+  margin-bottom: 12px;
+}
+
+.wlp-manifests-tab-count {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  border-radius: 9px;
+  background: #dcdcde;
+  color: #1d2327;
+  font-weight: 600;
+}
+
+/* Integration refinements: flat tables, native form controls, no floating action popovers. */
+.wlp-manifests { max-width: 1500px; }
+.wlp-manifests h1 { font-size: 23px; font-weight: 400; margin: 0; }
+.wlp-manifests .nav-tab-wrapper { margin-top: 16px; }
+.wlp-manifests-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 0; }
+.wlp-manifests-secondary { display:block; color:#646970; font-size:12px; line-height:1.5; margin-top:4px; }
+.wlp-manifests-muted { color:#646970; font-size:12px; }
+.wlp-manifests-order { font-weight:600; text-decoration:none; }
+.wlp-manifests-tracking { font-family:ui-monospace,Consolas,monospace; font-size:12px; overflow-wrap:anywhere; }
+.wlp-manifests .wlp-manifests-table { table-layout:auto; width:100%; border-collapse:collapse; box-shadow:none; }
+.wlp-manifests-table th { background:#f6f7f7; text-align:left; font-weight:600; }
+.wlp-manifests-table td,.wlp-manifests-table th { padding:12px; vertical-align:top; border-bottom:1px solid #e5e5e5; }
+.wlp-manifests-table td:nth-child(2) { white-space:nowrap; }
+.wlp-manifests-badge { display:inline-block; border-radius:3px; padding:2px 6px; font-size:12px; font-weight:500; line-height:1.5; background:#f0f0f1; color:#3c434a; }
+.wlp-manifests-badge.is-ready { color:#205d32; background:#edf7ef; }
+.wlp-manifests-badge.is-warning { color:#6e4900; background:#fcf3dc; }
+.wlp-manifests-detail { margin:6px 0; min-width:100px; }
+.wlp-manifests-detail summary { color:#2271b1; cursor:pointer; }
+.wlp-manifests-detail summary:focus-visible,.wlp-manifests a:focus-visible { outline:2px solid #2271b1; outline-offset:3px; }
+.wlp-manifests-detail>div { padding:8px 0; max-width:420px; min-width:180px; white-space:normal; }
+.wlp-manifests-detail p { margin:6px 0; font-size:12px; }
+.wlp-manifests-parcel { padding:8px 0; border-bottom:1px solid #dcdcde; }
+.wlp-manifests .wlp-manifests-submit-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:16px; margin:0; border:1px solid #c3c4c7; border-top:0; background:#fff; }
+.wlp-manifests-submit-bar>label:first-child { font-size:12px; font-weight:600; flex:1 1 280px; }
+.wlp-manifests-submit-bar select { display:block; width:100%; max-width:100%; margin-top:6px; font-weight:400; }
+.wlp-manifests-readiness { flex:1 1 260px; max-width:400px; font-size:13px; }
+.wlp-manifests-pagination { display:flex; justify-content:flex-end; align-items:center; gap:8px; padding:12px 0; color:#646970; }
+.wlp-manifests-review { margin-top:24px; scroll-margin-top:50px; }
+.wlp-manifests-review h2 { font-size:16px; margin-bottom:6px; }
+.wlp-manifests-review>p,.wlp-manifests-review-link { font-size:13px; }
+.wlp-manifests-empty { padding:28px 20px; background:#fff; border:1px solid #c3c4c7; margin-top:16px; }
+@media(max-width:782px) {
+ .wlp-manifests .wlp-manifests-table thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+ .wlp-manifests .wlp-manifests-table,.wlp-manifests .wlp-manifests-table tbody,.wlp-manifests .wlp-manifests-table tr { display:block; }
+ .wlp-manifests .wlp-manifests-table tr { border-bottom:1px solid #c3c4c7; padding:10px; }
+ .wlp-manifests .wlp-manifests-table td { display:block; padding:5px 0; border:0; white-space:normal; width:auto; }
+ .wlp-manifests .wlp-manifests-table td::before { content:attr(data-label); display:inline-block; width:38%; font-weight:600; color:#50575e; }
+ .wlp-manifests .wlp-manifests-table .wlp-manifests-secondary { margin-left:38%; }
+ .wlp-manifests-detail { margin-left:0; }
+ .wlp-manifests-submit-bar .button-primary { width:100%; }
+ .wlp-manifests-submit-bar>label:first-child,.wlp-manifests-readiness { flex:0 0 100%; max-width:none; }
+ .wlp-manifests .nav-tab { margin-left:0; margin-right:6px; }
+}

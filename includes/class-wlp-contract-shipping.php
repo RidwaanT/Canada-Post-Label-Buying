@@ -51,6 +51,27 @@ final class WLP_Contract_Shipping {
 		}
 		return array( 'ready' => count( $ready ), 'pending' => $pending, 'review' => $review );
 	}
+	/** Lists unresolved saved parcels independently of order handoff or delivery status. */
+	public static function manifest_issues( array $all ): array {
+		$ready = self::ready_candidates( $all );
+		$issues = array();
+		foreach ( $all as $key => $batch ) {
+			foreach ( $batch['shipments'] as $rid => $shipment ) {
+				if ( $batch['state'] === 'manifest_ready' || in_array( $shipment['state'], array( 'transmitted', 'voided', 'rejected' ), true ) ) { continue; }
+				if ( isset( $ready[ hash( 'sha256', $key . '|' . $rid ) ] ) ) { continue; }
+				$pending = in_array( $rid, $batch['pending'] ?? array(), true ) && in_array( $batch['state'], array( 'awaiting_manifest', 'transmitting', 'uncertain' ), true );
+				$reason = self::hold_reason( $shipment );
+				$issues[] = array(
+					'order' => (int) $shipment['order'],
+					'package' => $shipment['package'] ?? 'Whole order',
+					'tracking' => $shipment['result']['tracking_number'] ?? '',
+					'reason' => $pending ? 'Submission awaiting confirmation. Refresh or recover the existing submission; do not resubmit.' : ( $reason ?: ( $shipment['state'] === 'created' ? 'Manifest missing. This parcel is already marked shipped/delivered or its batch needs review.' : 'Carrier request needs recovery.' ) ),
+				);
+			}
+		}
+		return $issues;
+	}
+
 	/** Shows the handoff requirement on the logistics desk. */
 	public static function notice(): void {
 		if ( ! current_user_can( 'manage_woocommerce' ) || ( $_GET['page'] ?? '' ) !== 'wlp-logistics' ) {
@@ -269,8 +290,17 @@ final class WLP_Contract_Shipping {
 	private static function finish_day_panel( array $all ): void {
 		$rows = self::ready_candidates( $all );
 		$totals = self::pickup_summary( $all );
+		$summary = self::reminder_summary( $all );
+		$issues = self::manifest_issues( $all );
 		echo '<section class="wlp-finish-day" style="background:#fff;border:1px solid #ccd0d4;padding:20px;margin:16px 0;max-width:1100px"><h2>1. Add ready parcels to today’s manifest</h2><p>Pick the boxes that are packed and labelled. Older unused labels are included below so nothing is missed. Leave any parcel you are holding unchecked.</p>';
-		echo '<div role="status" style="background:#eef7f0;border:1px solid #a8cfb0;padding:16px;margin:16px 0"><h2 style="margin:0 0 8px">' . (int) $totals['pickup'] . ' package(s) confirmed for pickup</h2><p style="margin:0">' . (int) $totals['pending'] . ' awaiting carrier confirmation · ' . (int) $totals['remaining'] . ' eligible to submit</p><p style="margin:8px 0 0">Count the physical boxes before the driver arrives. This total includes confirmed pickup parcels not yet marked shipped. Pickup booking is separate.</p></div>';
+		echo '<div role="status" style="background:#eef7f0;border:1px solid #a8cfb0;padding:16px;margin:16px 0"><h2 style="margin:0 0 8px">' . (int) $totals['pickup'] . ' package(s) confirmed for pickup</h2><p style="margin:0">' . (int) $summary['pending'] . ' awaiting carrier confirmation · ' . (int) $totals['remaining'] . ' eligible to submit</p><p style="margin:8px 0 0">Count the physical boxes before the driver arrives. This total includes confirmed pickup parcels not yet marked shipped. Pickup booking is separate.</p></div>';
+		if ( $issues ) {
+			echo '<div class="notice notice-warning inline" role="alert"><h3>' . count( $issues ) . ' parcel(s) need manifest attention</h3><p>Shipping or delivery status does not confirm an electronic manifest. Review these saved records in the expanded history below. Check the carrier before submitting an already handed-over parcel.</p><table class="widefat striped"><thead><tr><th>Order / package</th><th>Tracking</th><th>Action needed</th></tr></thead><tbody>';
+			foreach ( $issues as $issue ) {
+				echo '<tr><td>#' . (int) $issue['order'] . ' / ' . esc_html( $issue['package'] ) . '</td><td>' . esc_html( $issue['tracking'] ) . '</td><td>' . esc_html( $issue['reason'] ) . '</td></tr>';
+			}
+			echo '</tbody></table></div>';
+		}
 		if ( $totals['dropoff'] ) { echo '<p>' . (int) $totals['dropoff'] . ' other parcel(s) confirmed for drop-off, excluded from the pickup total.</p>'; }
 		foreach ( $all as $key => $batch ) {
 			if ( ! empty( $batch['manifest_links'] ) ) { self::form( 'refresh', $key ); echo '<p>Canada Post confirmation is pending. Refresh this existing submission; do not submit it again.</p><button class="button button-primary">Refresh pending manifest</button></form>'; }
@@ -286,14 +316,14 @@ final class WLP_Contract_Shipping {
 				echo '<tr><td><input type="checkbox" name="parcels[]" value="' . esc_attr( $token ) . '" aria-label="Add order ' . (int) $row['order'] . ' ' . esc_attr( $row['package'] ) . '"></td><td>#' . (int) $row['order'] . '</td><td>' . esc_html( $row['package'] ) . '</td><td>' . esc_html( $row['tracking'] ) . '</td><td>' . esc_html( $row['day'] ) . '</td></tr>';
 			}
 			echo '</tbody></table></div><p><label><input type="checkbox" name="ready" value="yes" required> These selected parcels are packed, labelled and ready for handoff today (' . esc_html( wp_date( 'F j, Y' ) ) . ') at the selected location.</label></p><button class="button button-primary button-hero" data-finish-submit>Finish shipping day</button><p class="description">Sends only your selection to Canada Post and checks for manifest confirmation. Does not book pickup or mark parcels shipped. If pickup is tomorrow, submit tomorrow before collection.</p></form>';
-		} else { echo '<h3>No more eligible parcels to submit</h3><p>' . ( $totals['pending'] ? 'Your selected parcels have been submitted. Refresh the pending confirmation above before handoff.' : 'All eligible labels are accounted for. Your confirmed pickup total is shown above.' ) . ' Cancelled, held and already shipped labels are excluded. Any issues remain in manifest history below.</p>'; }
+		} else { echo '<h3>No more eligible parcels to submit</h3><p>' . ( $summary['pending'] ? 'Your selected parcels have been submitted. Refresh the pending confirmation above before handoff.' : ( $issues ? 'Unresolved manifest records still need attention below.' : 'No unshipped parcels are eligible in the saved shipment records. Check Canada Post if a shipment is missing here.' ) ) . ' Cancelled, held and already shipped labels are excluded. Any issues remain in manifest history below.</p>'; }
 		echo '<h2>2. Book or check pickup</h2><p>Pickup location: <strong>260 King St E, Hamilton, ON L8N 1B7</strong>. A manifest does not book a driver. Choose a one-time pickup, or use your existing recurring pickup.</p><a class="button button-secondary" target="_blank" rel="noopener" href="https://www.canadapost-postescanada.ca/pup-rdc/en/request-pickup">Book / check Canada Post pickup</a><p>Pickup booking status is not connected here. Keep Canada Post’s booking confirmation.</p><h2>3. Hand over the parcels</h2><p>Wait for confirmed manifests below, then hand the selected boxes to Canada Post. Mark shipped in Logistics after collection. Domestic paper manifests are optional when a parcel can be scanned; otherwise print the Letter PDF.</p>';
 		foreach ( $all as $batch ) {
 			foreach ( $batch['manifests'] ?? array() as $manifest ) {
 				if ( substr( $manifest['confirmed_at'] ?? '', 0, 10 ) === gmdate( 'Y-m-d' ) ) { echo '<p><strong>Confirmed manifest: ' . esc_html( $manifest['po'] ) . '</strong>. PDF available in manifest history below.</p>'; }
 			}
 		}
-		echo '</section><script>(function(){const box=document.querySelector(".wlp-finish-day"),form=box.querySelector("form");if(!form)return;const picks=[...form.querySelectorAll("input[name=\"parcels[]\"]")],ready=form.elements.ready,button=form.querySelector("[data-finish-submit]");function update(){const count=picks.filter(p=>p.checked).length;form.querySelector("[data-pick-count]").textContent=count+" parcel"+(count===1?"":"s")+" selected";button.disabled=!count||!ready.checked;}form.querySelector("[data-pick-all]").addEventListener("click",()=>{picks.forEach(p=>p.checked=true);ready.checked=false;update();});form.querySelector("[data-pick-none]").addEventListener("click",()=>{picks.forEach(p=>p.checked=false);ready.checked=false;update();});form.addEventListener("change",e=>{if(e.target!==ready)ready.checked=false;update();});form.addEventListener("submit",()=>{button.disabled=true;button.textContent="Submitting manifest…";});update();})();</script>';
+		echo '</section><script>(function(){const box=document.querySelector(".wlp-finish-day"),input=box.querySelector("input[name=pickup_day]"),form=input?.form;if(!form)return;const picks=[...form.querySelectorAll("input[name=\"parcels[]\"]")],ready=form.elements.ready,button=form.querySelector("[data-finish-submit]");function update(){const count=picks.filter(p=>p.checked).length;form.querySelector("[data-pick-count]").textContent=count+" parcel"+(count===1?"":"s")+" selected";button.disabled=!count||!ready.checked;}form.querySelector("[data-pick-all]").addEventListener("click",()=>{picks.forEach(p=>p.checked=true);ready.checked=false;update();});form.querySelector("[data-pick-none]").addEventListener("click",()=>{picks.forEach(p=>p.checked=false);ready.checked=false;update();});form.addEventListener("change",e=>{if(e.target!==ready)ready.checked=false;update();});form.addEventListener("submit",()=>{button.disabled=true;button.textContent="Submitting manifest…";});update();})();</script>';
 	}
 
 	/** Renders parcel selection, carrier confirmation and safe recovery actions. */
@@ -314,7 +344,7 @@ final class WLP_Contract_Shipping {
 		}
 		$all = array_reverse( self::read(), true );
 		self::finish_day_panel( $all );
-		echo '<details><summary style="font-size:18px;cursor:pointer">Manifest history, pending confirmations and recovery</summary>';
+		echo '<details' . ( self::manifest_issues( $all ) ? ' open' : '' ) . '><summary style="font-size:18px;cursor:pointer">Manifest history, pending confirmations and recovery</summary>';
 		if ( ! $all ) {
 			echo '<p>No contract labels yet. Save your customer number, agreement, API credentials and pickup/drop-off details in Logistics settings.</p>';
 		}

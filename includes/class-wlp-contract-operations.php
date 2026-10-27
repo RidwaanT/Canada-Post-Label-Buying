@@ -181,6 +181,12 @@ trait WLP_Contract_Operations {
 					throw new RuntimeException( $reason );
 				}
 			}
+			// Verify selected identities before a carrier POST, including externally transmitted labels.
+			foreach ($selected as $rid) {
+				$result = $b['shipments'][$rid]['result'];
+				$verified = WLP_Manifest_Verifier::fetch($cfg, (string)$result['shipment_id'], (string)$result['tracking_number']);
+				if ($verified['state'] !== 'created') { throw new RuntimeException('A selected parcel is already transmitted or unavailable at Canada Post. Review automatic verification; do not resubmit it.'); }
+			}
 			$b['excluded']                   = $excluded;
 			$xml                             = self::transmit_xml( $b, $key, $handoff );
 			$all[ $key ]['pending_handoff']  = $handoff;

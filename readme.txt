@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, logistics, canada post, labels
 Requires at least: 6.4
 Tested up to: 6.6
 Requires PHP: 8.1
-Stable tag: 0.1.232
+Stable tag: 0.1.233
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,6 +34,10 @@ No. V1 supports Canadian domestic shipments only.
 Yes. Shipping manifests can void confirmed untransmitted labels created by this plugin. Interrupted operations stay blocked until reconciled. Returns use the separate Authorized Returns API and do not enter outbound manifests. Return PDFs are stored privately for later reprinting; creating a return does not send a customer email. Interrupted requests remain blocked for carrier reconciliation.
 
 == Changelog ==
+
+= 0.1.233 =
+* Automatically verify unresolved commercial shipments in paced background batches.
+* Display carrier evidence and missing local records, and guard duplicate transmissions.
 
 = 0.1.232 =
 * Request Canada Post labels as PDF and report failed downloads without crashing batch printing.

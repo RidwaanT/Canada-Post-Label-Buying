@@ -3,6 +3,7 @@
 declare(strict_types=1);
 defined( 'ABSPATH' ) || exit;
 require_once __DIR__ . '/class-wlp-contract-handoff.php';
+require_once __DIR__ . '/class-wlp-manifest-verifier.php';
 require_once __DIR__ . '/class-wlp-contract-xml.php';
 require_once __DIR__ . '/class-wlp-contract-operations.php';
 require_once __DIR__ . '/class-wlp-manifest-quick-submit.php';
@@ -343,6 +344,7 @@ final class WLP_Contract_Shipping {
 			echo '</section>';
 		}
 		$all = array_reverse( self::read(), true );
+		WLP_Manifest_Verifier::render();
 		self::finish_day_panel( $all );
 		echo '<details' . ( self::manifest_issues( $all ) ? ' open' : '' ) . '><summary style="font-size:18px;cursor:pointer">Manifest history, pending confirmations and recovery</summary>';
 		if ( ! $all ) {

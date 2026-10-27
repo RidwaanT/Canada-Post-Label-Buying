@@ -54,7 +54,7 @@ final class WLP_Manifest_Verifier {
  public static function public_snapshot(): array {
   $data=self::snapshot(); $rows=array();
   foreach ($data['parcels'] ?? array() as $row) { $rows[]=array_intersect_key($row,array_flip(array('order','shipment_id','tracking','state','po','checked_at','attempted_at','error','journal','expected','next_at'))); }
-  return array('last_run'=>$data['last_run'] ?? null,'error'=>$data['error'] ?? null,'parcels'=>$rows);
+  return array('last_run'=>$data['last_run'] ?? null,'error'=>$data['error'] ?? null,'next_run'=>function_exists('as_next_scheduled_action') ? as_next_scheduled_action(self::HOOK,array(),'wlp-manifests') : false,'parcels'=>$rows);
  }
  /** Checks the exact current primary label for external shipping actions. Errors fail closed. */
  public static function order_status(WP_REST_Request $request): WP_REST_Response|WP_Error {
@@ -140,6 +140,8 @@ final class WLP_Manifest_Verifier {
  public static function render(): void {
   $data=self::public_snapshot();
   echo '<section class="notice notice-info inline"><h2>Automatic carrier verification</h2><p>Unresolved shipments are checked about every 15 minutes in background batches. Last run: '.esc_html($data['last_run'] ?? 'Waiting for the scheduled worker').'.</p>';
+  if ($data['next_run'] === false) { echo '<p role="alert">No automatic verification action is scheduled. Review WooCommerce Scheduled Actions.</p>'; }
+  if ($data['last_run'] && strtotime($data['last_run'])<time()-1800) { echo '<p role="alert">Automatic verification is overdue. Review WooCommerce Scheduled Actions; saved evidence may be stale.</p>'; }
   if ($data['error']) { echo '<p role="alert">'.esc_html($data['error']).'</p>'; }
   echo '<table class="widefat striped"><thead><tr><th>Order</th><th>Carrier status</th><th>Manifest / PO</th><th>Last successful check</th><th>Attention</th></tr></thead><tbody>';
   foreach ($data['parcels'] as $row) {

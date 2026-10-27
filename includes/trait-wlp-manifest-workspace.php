@@ -5,7 +5,7 @@ defined('ABSPATH') || exit;
 trait WLP_Manifest_Workspace {
  /** Projects journal and carrier evidence into unsubmitted parcels and submission history. */
  private static function workspace_rows(array $all, array $evidence): array {
-  $eligible=self::ready_candidates($all); $needs=[]; $submitted=[]; $review=[]; $seen=[]; $autoBilled=[];
+  $eligible=self::ready_candidates($all,true); $needs=[]; $submitted=[]; $review=[]; $seen=[]; $autoBilled=[];
   foreach ($all as $key=>$batch) {
    $pending=[]; $confirmed=[];
    foreach ($batch['shipments'] as $rid=>$shipment) {
@@ -27,7 +27,9 @@ trait WLP_Manifest_Workspace {
     }
     if ($state==='transmitted' || (($proof['state'] ?? '')==='transmitted' && empty($proof['error']))) { $confirmed[]=$row; continue; }
     $token=hash('sha256',$key.'|'.$rid); $row['token']=isset($eligible[$token]) ? $token : '';
+    $row['handed_over']=!empty($eligible[$token]['handed_over']);
     $row['reason']=$row['token'] ? '' : (self::hold_reason($shipment) ?: ($state==='created' ? 'Already handed over or batch needs review. Check the carrier before submission.' : 'Recover the existing carrier request before continuing.'));
+    if ($row['handed_over']) { $row['reason']='Already shipped or delivered � manifest still needs submission.'; }
     if (!empty($proof['error'])) { $row['reason']=$proof['error']; }
     if (isset($proof['state']) && !in_array($proof['state'],['created','unknown'],true)) { $row['token']='';$row['reason']='Carrier status needs review: '.$proof['state'].'.'; }
     if ($batch['day']>wp_date('Y-m-d')) { $row['token']='';$row['reason']='Available on the label dispatch date.'; }
@@ -110,13 +112,13 @@ trait WLP_Manifest_Workspace {
   echo '<div class="wlp-manifests-toolbar"><button type="button" class="button" data-pick-all>Select eligible on this page</button><button type="button" class="button" data-pick-none>Clear</button><span data-pick-count aria-live="polite">0 parcels selected</span></div>';
   echo '<table class="widefat wlp-manifests-table"><caption class="screen-reader-text">Unsubmitted parcels</caption><thead><tr><th scope="col">Select</th><th scope="col">Date</th><th scope="col">Order</th><th scope="col">Destination / service</th><th scope="col">Tracking</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead><tbody>';
   foreach ($rows as $i=>$row) {
-   echo '<tr><td data-label="Select"><input type="checkbox" form="wlp-manifest-selection" name="parcels[]" value="'.esc_attr($row['token']).'" aria-label="Select order '.(int)$row['order'].' '.esc_attr($row['package']).'"'.($row['token']?'':' disabled').' aria-describedby="wlp-reason-'.$i.'"></td><td data-label="Date">'.esc_html($row['day'] ?: '—').'</td><td data-label="Order">';self::workspace_order($row);
+   echo '<tr'.(!empty($row['handed_over'])?' class="wlp-manifest-overdue"':'').'><td data-label="Select"><input type="checkbox" form="wlp-manifest-selection" name="parcels[]" value="'.esc_attr($row['token']).'" aria-label="Select order '.(int)$row['order'].' '.esc_attr($row['package']).'"'.($row['token']?'':' disabled').' aria-describedby="wlp-reason-'.$i.'"></td><td data-label="Date">'.esc_html($row['day'] ?: '—').'</td><td data-label="Order">';self::workspace_order($row);
    echo '</td><td data-label="Destination / service">';self::workspace_destination($row);
-   echo '</td><td data-label="Tracking" class="wlp-manifests-tracking">'.esc_html($row['tracking'] ?: 'Not available').'</td><td data-label="Status"><span class="wlp-manifests-badge '.($row['token']?'is-ready':'is-warning').'">'.($row['token']?'Not submitted':'Needs review').'</span><span class="wlp-manifests-secondary" id="wlp-reason-'.$i.'">'.esc_html($row['reason']).'</span></td><td data-label="Actions">';self::workspace_detail($row,$all);echo '</td></tr>';
+   echo '</td><td data-label="Tracking" class="wlp-manifests-tracking">'.esc_html($row['tracking'] ?: 'Not available').'</td><td data-label="Status"><span class="wlp-manifests-badge '.(!empty($row['handed_over'])?'is-overdue':($row['token']?'is-ready':'is-warning')).'">'.(!empty($row['handed_over'])?'! NEEDS SUBMISSION':($row['token']?'Not submitted':'Needs review')).'</span><span class="wlp-manifests-secondary" id="wlp-reason-'.$i.'">'.esc_html($row['reason']).'</span></td><td data-label="Actions">';self::workspace_detail($row,$all);echo '</td></tr>';
   }
   echo '</tbody></table><div class="wlp-manifests-submit-bar"><label for="wlp-handoff">Handoff location<select id="wlp-handoff" name="handoff_id" form="wlp-manifest-selection" required>';
   foreach (WLP_Contract_Handoff::locations() as $id=>$point) { echo '<option value="'.esc_attr($id).'"'.selected($id,WLP_Contract_Handoff::DEFAULT_ID,false).'>'.esc_html(WLP_Contract_Handoff::describe($point)).'</option>'; }
-  echo '</select></label><label class="wlp-manifests-readiness"><input type="checkbox" form="wlp-manifest-selection" name="ready" value="yes" required> Selected parcels are packed, labelled and ready for handoff today.</label><button type="submit" form="wlp-manifest-selection" class="button button-primary" data-finish-submit>Submit selected parcels</button></div><p class="wlp-manifests-muted">Pickup booking is separate. Submission does not mark orders shipped.</p>';
+  echo '</select></label><label class="wlp-manifests-readiness"><input type="checkbox" form="wlp-manifest-selection" name="ready" value="yes" required> Selected parcels need manifest submission and are ready for handoff or have already been handed over.</label><button type="submit" form="wlp-manifest-selection" class="button button-primary" data-finish-submit>Submit selected parcels</button></div><p class="wlp-manifests-muted">Use the actual or planned handoff location. Canada Post status is checked again before submission. Submission does not mark orders shipped or book a pickup.</p>';
  }
  /** Flat submission/review table, with protected recovery and PDF links in each row. */
  private static function workspace_submissions(array $rows,array $all,bool $review): void {

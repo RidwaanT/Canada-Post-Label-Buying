@@ -208,8 +208,8 @@ final class WLP_Contract_Shipping {
 		exit;
 	}
 
-	/** Labels eligible for today's handoff, without inferring physical readiness. */
-	public static function ready_candidates( array $all ): array {
+	/** Returns submission candidates; handed-over parcels are opt-in so pickup totals stay physical. */
+	public static function ready_candidates( array $all, bool $include_handed_over = false ): array {
 		$rows = array();
 		foreach ( $all as $key => $batch ) {
 			if ( $batch['state'] !== 'open' || array_filter( $batch['shipments'], static fn( $s ) => self::unresolved( $s['state'] ) ) ) { continue; }
@@ -217,19 +217,22 @@ final class WLP_Contract_Shipping {
 				if ( WLP_Manifest_Reconciliation::lookup($batch['config'],$shipment) || $shipment['state'] !== 'created' || self::hold_reason( $shipment ) ) { continue; }
 				$order = wc_get_order( $shipment['order'] );
 				$package = 'Whole order';
+				$handed_over = false;
 				if ( str_starts_with( $shipment['package'] ?? '', 'split:' ) ) {
 					$data = $order->get_meta( '_wlp_split_shipments', true );
 					foreach ( $data['packages'] ?? array() as $index => $part ) {
 						if ( 'split:' . $part['id'] !== $shipment['package'] ) { continue; }
-						if ( ! empty( $part['shippedAt'] ) || ! empty( $part['deliveredAt'] ) ) { continue 2; }
+						$handed_over = !empty($part['shippedAt']) || !empty($part['deliveredAt']);
+						if ($handed_over && !$include_handed_over) { continue 2; }
 						$package = 'Package ' . ( $index + 1 );
 					}
 				} else {
 					$meta = WLP_Order_Logistics::read( $order );
-					if ( ! empty( $meta['shipped_at'] ) || ! empty( $meta['delivered_at'] ) ) { continue; }
+					$handed_over = !empty($meta['shipped_at']) || !empty($meta['delivered_at']);
+					if ($handed_over && !$include_handed_over) { continue; }
 				}
 				$token = hash( 'sha256', $key . '|' . $rid );
-				$rows[ $token ] = array( 'batch' => $key, 'request' => $rid, 'order' => $shipment['order'], 'package' => $package, 'day' => $batch['day'], 'tracking' => $shipment['result']['tracking_number'] ?? '' );
+				$rows[ $token ] = array( 'handed_over' => $handed_over, 'batch' => $key, 'request' => $rid, 'order' => $shipment['order'], 'package' => $package, 'day' => $batch['day'], 'tracking' => $shipment['result']['tracking_number'] ?? '' );
 			}
 		}
 		return $rows;
@@ -238,15 +241,15 @@ final class WLP_Contract_Shipping {
 	/** Preflight every selection before any carrier submission; never retry uncertain results. */
 	private static function finish_day_groups( array $input ): array {
 		if ( ( $input['ready'] ?? '' ) !== 'yes' || ( $input['pickup_day'] ?? '' ) !== wp_date( 'Y-m-d' ) ) {
-			throw new RuntimeException( 'Confirm the parcels are ready for pickup today. Reload this page if the date changed.' );
+			throw new RuntimeException( 'Confirm these parcels need manifest submission. Reload this page if the date changed.' );
 		}
 		$tokens = $input['parcels'] ?? array();
-		if ( ! is_array( $tokens ) || ! $tokens || array_filter( $tokens, static fn( $v ) => ! is_string( $v ) ) ) { throw new RuntimeException( 'Select the parcels ready for pickup.' ); }
+		if ( ! is_array( $tokens ) || ! $tokens || array_filter( $tokens, static fn( $v ) => ! is_string( $v ) ) ) { throw new RuntimeException( 'Select the parcels needing submission.' ); }
 		$handoff = $input['handoff_id'] ?? '';
 		if ( ! is_string( $handoff ) ) { throw new RuntimeException( 'Invalid pickup location.' ); }
 		WLP_Contract_Handoff::resolve( $handoff );
 		$all = self::read();
-		$eligible = self::ready_candidates( $all );
+		$eligible = self::ready_candidates( $all, true );
 		$groups = array();
 		foreach ( array_unique( $tokens ) as $token ) {
 			if ( ! isset( $eligible[ $token ] ) ) { throw new RuntimeException( 'A selected parcel changed or is no longer eligible. Reload and review the list.' ); }

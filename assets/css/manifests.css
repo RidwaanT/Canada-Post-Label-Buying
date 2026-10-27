@@ -92,3 +92,8 @@
  .wlp-manifests-submit-bar>label:first-child,.wlp-manifests-readiness { flex:0 0 100%; max-width:none; }
  .wlp-manifests .nav-tab { margin-left:0; margin-right:6px; }
 }
+
+/* Missing manifests remain urgent even after physical handoff. */
+.wlp-manifests-table tr.wlp-manifest-overdue > td { background: #fff1f0; }
+.wlp-manifests-table tr.wlp-manifest-overdue > td:first-child { border-left: 4px solid #b42318; }
+.wlp-manifests-badge.is-overdue { color: #8a1c13; background: #fee4e2; font-weight: 700; }

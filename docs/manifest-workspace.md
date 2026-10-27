@@ -12,8 +12,7 @@ Designed with AGY Gemini 4 Argon (High), then adapted to the existing WordPress 
 Checks: PHP syntax; `php tests/manifest-visibility.php`; `php tests/manifest-verification.php`; `node tests/manifest-form.cjs`; synthetic desktop/mobile browser checks including actual HTML FormData, selection, readiness reset, review placement, history and overflow.
 # Auto-billed reconciliation
 
-The submission queue contains only selectable parcels. Held, shipped, cancelled,
-or uncertain records remain in the lower review table on the same page.
+The submission queue contains only selectable parcels. Shipped/delivered parcels with missing manifests remain selectable with a red NEEDS SUBMISSION warning. Held, cancelled, or uncertain records remain in the lower review table on the same page. Physical pickup and quick-submit candidates still exclude already handed-over parcels.
 
 Reviewed Canada Post auto-billing notices can be recorded through manager-authenticated
 `POST /wc/v3/wlp-manifests/auto-billed` with `customer`, `tracking`, `order` (integer),

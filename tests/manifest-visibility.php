@@ -61,9 +61,11 @@ $all['confirmed']['manifests']=[['po'=>'TEST-PO','artifact'=>'https://example.co
 $all['pending']['manifest_links']=['https://example.com/pending'];
 $project=new ReflectionMethod(WLP_Contract_Shipping::class,'workspace_rows');
 $data=$project->invoke(null,$all,[]);
-check(count($data['review'])===5,'Awaiting submissions must be in the review table.');
+check(count($data['review'])===2,'Awaiting submissions must be in the review table.');
 check(count($data['submitted'])===1,'Only confirmed submissions belong in history.');
-check(count(array_filter($data['needs'],static fn($r)=>!empty($r['token'])))===1,'Only the existing eligible parcel is selectable.');
+check(count(array_filter($data['needs'],static fn($r)=>!empty($r['token'])))===4,'Shipped, delivered and split parcels remain selectable alongside unshipped parcels.');
+check(count(WLP_Contract_Shipping::ready_candidates($all))===1,'Pickup/quick-submit candidates must still exclude handed-over parcels.');
+check(count(array_filter($data['needs'],static fn($r)=>!empty($r['handed_over'])))===3,'All handed-over missing manifests must be flagged urgent.');
 $proofKey=WLP_Manifest_Verifier::key($all['ready']['config'],'test-3','TEST-3');
 $verified=$project->invoke(null,$all,['parcels'=>[$proofKey=>['state'=>'transmitted','error'=>null]]]);
 check(!in_array(3,array_column($verified['needs'],'order'),true),'Carrier-confirmed parcels cannot appear as selectable unsubmitted parcels.');
@@ -71,10 +73,11 @@ $uncertain=batch(3,'uncertain');$recovery=$project->invoke(null,['uncertain'=>$u
 check(!$recovery['needs'] && count($recovery['review'])===1,'Uncertain label requests stay in the visible review table.');
 $conflictKey=WLP_Manifest_Verifier::key($all['confirmed']['config'],'test-4','TEST-4');
 $conflict=$project->invoke(null,$all,['parcels'=>[$conflictKey=>['state'=>'created']]]);
-check(count($conflict['review'])===6,'Carrier/local disagreement remains visible for review without resubmission.');
+check(count($conflict['review'])===3,'Carrier/local disagreement remains visible for review without resubmission.');
 $render=new ReflectionMethod(WLP_Contract_Shipping::class,'workspace_render');
 ob_start();$render->invoke(null,$all,[],'needs',1);$html=ob_get_clean();
 check(str_contains($html,'Awaiting confirmation / Needs review') && str_contains($html,'#1') && str_contains($html,'#2'),'Missing and pending manifests remain visible on the main page.');
+check(str_contains($html,'! NEEDS SUBMISSION') && str_contains($html,'wlp-manifest-overdue'),'Urgency uses text and styling, not colour alone.');
 check(!str_contains($html,'Dispatch 2026') && !str_contains($html,'Finish shipping day'),'No per-day headings or old walkthrough.');
 check(str_contains($html,'name="parcels[]"') && str_contains($html,'name="handoff_id"') && str_contains($html,'name="ready"'),'Submission contract remains unchanged.');
 check(strpos($html,'Awaiting confirmation / Needs review')>strpos($html,'Submit selected parcels'),'Review table appears below the queue.');

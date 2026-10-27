@@ -263,7 +263,17 @@ final class WLP_Contract_Shipping {
 	}
 
 	private static function finish_day( array $input ): void {
-		foreach ( self::finish_day_groups( $input ) as $key => $requests ) { self::transmit( $key, $requests, $input['handoff_id'] ); }
+		$groups = self::finish_day_groups( $input );
+		$sent = 0;
+		foreach ( $groups as $key => $requests ) {
+			try {
+				// A pending PDF is normal. Do not let confirmation polling interrupt other selected batches.
+				self::transmit( $key, $requests, $input['handoff_id'], false );
+				++$sent;
+			} catch ( Throwable $error ) {
+				throw new RuntimeException(sprintf('%d of %d selected batches sent. Processing stopped on the next batch: %s Check awaiting confirmation before retrying; do not resubmit pending parcels.', $sent, count($groups), $error->getMessage()), 0, $error);
+			}
+		}
 	}
 
 

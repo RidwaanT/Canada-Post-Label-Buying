@@ -159,7 +159,8 @@ trait WLP_Manifest_Workspace {
   echo '<div class="wrap wlp-manifests"><header class="wlp-manifests-header"><h1>Shipping manifests</h1><a href="'.esc_url(admin_url('admin.php?page=wlp-logistics')).'">Back to Logistics</a></header>';
   $health=WLP_Manifest_Verifier::public_snapshot();
   $stale=!$health['last_run'] || strtotime($health['last_run'])<time()-1800 || !empty($health['error']) || $health['next_run']===false;
-  echo '<p class="wlp-manifests-scheduler'.($stale?' is-warning':'').'">'.($stale?'Verification needs attention':'Automatic verification active').' · Last worker run: '.esc_html($health['last_run'] ?? 'Not yet run').'</p>';
+  echo '<p class="wlp-manifests-scheduler'.($stale?' is-warning':'').'">'.($stale?'Background label verification needs attention':'Background label verification active').' · Last worker run: '.esc_html($health['last_run'] ?? 'Not yet run').'</p>';
+  echo '<p class="wlp-manifests-muted">Pending confirmations are checked automatically when this page opens (up to 3 batches per load; 60-second cooldown per batch). This works independently of background verification.</p>';
   echo '<nav class="nav-tab-wrapper" aria-label="Manifest views">';
   foreach (['needs'=>'Needs submission','submitted'=>'Submitted / Auto-billed'] as $value=>$label) { echo '<a class="nav-tab'.($value===$tab?' nav-tab-active':'').'"'.($value===$tab?' aria-current="page"':'').' href="'.esc_url(self::workspace_url($value)).'">'.esc_html($label).' <span class="wlp-manifests-tab-count">'.count($data[$value==='needs'?'needs':'submitted']).'</span></a>'; }echo '</nav>';
   if ($tab==='needs') {

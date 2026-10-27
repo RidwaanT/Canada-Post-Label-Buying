@@ -309,9 +309,30 @@ final class WLP_Contract_Shipping {
 		return $totals;
 	}
 
-	/** Renders the compact workspace without changing any carrier operation. */
+	/** Checks saved confirmation links only; page loads work even when scheduled jobs do not. */
+	public static function check_page_confirmations(): void {
+		$attempts=(array)get_option('wlp_manifest_page_checks',array());
+		$pending=array_filter(self::read(),static fn($batch)=>$batch['state']==='awaiting_manifest' && !empty($batch['manifest_links']));
+		$attempts=array_intersect_key($attempts,$pending);
+		uasort($pending,static fn($a,$b)=>0);
+		$keys=array_keys($pending);
+		usort($keys,static fn($a,$b)=>($attempts[$a] ?? 0)<=>($attempts[$b] ?? 0));
+		$started=time();$checked=0;
+		foreach ($keys as $key) {
+			if (($attempts[$key] ?? 0)>time()-60) { continue; }
+			if ($checked>=3 || time()-$started>=8) { break; }
+			// Respect in-progress writes. refresh() also acquires the same durable operation lock.
+			if (get_option(self::LOCK)) { break; }
+			$attempts[$key]=time();update_option('wlp_manifest_page_checks',$attempts,false);++$checked;
+			try { self::refresh($key); }
+			catch (Throwable $error) { /* Pending or unavailable stays visible with its existing recovery action. */ }
+		}
+		update_option('wlp_manifest_page_checks',$attempts,false);
+	}
+	/** Renders current saved state after bounded GET-only confirmation checks. */
 	public static function page(): void {
 		self::authorize();
+		self::check_page_confirmations();
 		$tab=isset($_GET['manifest_tab']) && $_GET['manifest_tab']==='submitted' ? 'submitted' : 'needs';
 		$page=isset($_GET['manifest_page']) && is_scalar($_GET['manifest_page']) ? max(1,(int)$_GET['manifest_page']) : 1;
 		$review_page=isset($_GET['review_page']) && is_scalar($_GET['review_page']) ? max(1,(int)$_GET['review_page']) : 1;

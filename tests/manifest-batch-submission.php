@@ -9,6 +9,7 @@ class WLP_Canada_Post_Client {
  public static array $posts=[];
  public static int $polls=0;
  public static bool $failSecond=false;
+ public static bool $confirmed=false;
  public function contract_is_sandbox(): bool { return true; }
  public function contract_transport($method,$url,$body='',$accept=''): string {
   if ($method==='POST') {
@@ -18,6 +19,7 @@ class WLP_Canada_Post_Client {
   }
   if (str_contains($url,'/shipment/')) { $id=basename($url);return '<shipment-info><shipment-id>'.$id.'</shipment-id><tracking-pin>'.$id.'</tracking-pin><shipment-status>created</shipment-status></shipment-info>'; }
   ++self::$polls;
+  if (self::$confirmed) { return '<manifest><po-number>P000000001</po-number><link rel="artifact" href="https://example.com/manifest.pdf"/></manifest>'; }
   return '<manifest><po-number>EMPTY</po-number></manifest>';
  }
 }
@@ -47,4 +49,21 @@ $GLOBALS['options']['wlp_contract_batches_v1']=$batches;WLP_Canada_Post_Client::
 try { $run->invoke(null,$input);throw new LogicException('Unexpected success'); } catch (RuntimeException $e) { check(str_contains($e->getMessage(),'1 of 2 selected batches sent'),'Partial failure must report completed batch count.'); }
 $saved=$GLOBALS['options']['wlp_contract_batches_v1'];
 check($saved['first']['state']==='awaiting_manifest' && $saved['second']['state']==='uncertain','A real timeout must preserve sent and uncertain states without retrying.');
+$posts=count(WLP_Canada_Post_Client::$posts);
+WLP_Contract_Shipping::check_page_confirmations();
+check(WLP_Canada_Post_Client::$polls===1,'Page load must check saved links, but never uncertain transmissions.');
+WLP_Contract_Shipping::check_page_confirmations();
+check(WLP_Canada_Post_Client::$polls===1,'Immediate page reloads must respect the per-batch cooldown.');
+$GLOBALS['options']['wlp_manifest_page_checks']=[];
+$GLOBALS['options']['wlp_contract_operation_lock']='busy';
+WLP_Contract_Shipping::check_page_confirmations();
+check(WLP_Canada_Post_Client::$polls===1,'Page checks must not interfere with an active operation.');
+unset($GLOBALS['options']['wlp_contract_operation_lock']);
+WLP_Canada_Post_Client::$confirmed=true;
+WLP_Contract_Shipping::check_page_confirmations();
+$saved=$GLOBALS['options']['wlp_contract_batches_v1'];
+check($saved['first']['state']==='manifest_ready' && $saved['second']['state']==='uncertain','Confirmed results advance only the matching pending batch.');
+check(count(WLP_Canada_Post_Client::$posts)===$posts,'Page checking must never send a carrier POST.');
+WLP_Contract_Shipping::check_page_confirmations();
+check(WLP_Canada_Post_Client::$polls===2,'Confirmed batches must not be polled again.');
 echo "Multi-batch submission regressions passed.\n";

@@ -4,7 +4,7 @@ Tags: woocommerce, shipping, logistics, canada post, labels
 Requires at least: 6.4
 Tested up to: 6.6
 Requires PHP: 8.1
-Stable tag: 0.1.237
+Stable tag: 0.1.238
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -35,7 +35,7 @@ Yes. Shipping manifests can void confirmed untransmitted labels created by this 
 
 == Changelog ==
 
-= 0.1.237 =
+= 0.1.238 =
 * Simplify manifests into a flat unsubmitted queue, visible review table and paginated confirmed history.
 * Keep submission safeguards and existing recovery/PDF actions.
 

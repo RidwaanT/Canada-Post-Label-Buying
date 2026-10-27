@@ -14,6 +14,7 @@ final class WLP_Manifest_Verifier {
   add_action(self::HOOK, array(self::class, 'run'));
   add_action('rest_api_init', static function(): void {
    require_once __DIR__.'/class-wlp-manifest-reconciliation.php';
+   register_rest_route('wc/v3/wlp-manifests', '/orders/(?P<id>\d+)/summary', array('methods'=>'GET', 'permission_callback'=>static fn()=>current_user_can('manage_woocommerce'), 'callback'=>static function($request) { self::load();return WLP_Contract_Shipping::manifest_summary((int)$request['id']); }));
    register_rest_route('wc/v3/wlp-manifests', '/auto-billed', array('methods'=>'POST', 'permission_callback'=>static fn()=>current_user_can('manage_woocommerce'), 'callback'=>array('WLP_Manifest_Reconciliation','record')));
    register_rest_route('wc/v3/wlp-manifests', '/status', array('methods'=>'GET', 'permission_callback'=>static fn()=>current_user_can('manage_woocommerce'), 'callback'=>static fn()=>rest_ensure_response(self::public_snapshot())));
    register_rest_route('wc/v3/wlp-manifests', '/orders/(?P<id>\d+)', array('methods'=>'GET', 'permission_callback'=>static fn()=>current_user_can('manage_woocommerce'), 'callback'=>array(self::class,'order_status')));

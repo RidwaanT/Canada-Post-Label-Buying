@@ -29,4 +29,11 @@ ob_start();$render->invoke(null,['b'=>$b],[],'submitted',1);$billingHtml=ob_get_
 check(str_contains($billingHtml,'Auto-billed by Canada Post') && str_contains($billingHtml,'Penalty amount has not been separately reconciled') && !str_contains($billingHtml,'Restore saved label'),'Billed history explains evidence and offers no label-reuse action.');
 ob_start();$render->invoke(null,[],[],'needs',1);$empty=ob_get_clean();
 check(!str_contains($empty,'Handoff location') && !str_contains($empty,'Submit selected parcels'),'Empty queue must hide unnecessary submission controls.');
+$GLOBALS['options']['wlp_contract_batches_v1']=['b'=>$b];
+$summary=WLP_Contract_Shipping::manifest_summary(3);
+check($summary['status']==='auto_billed' && $summary['counts']['auto_billed']===1 && $summary['parcels'][0]['manifest_references']===['P000000001'],'MCP summary must expose exact auto-billed evidence.');
+check($summary['live_carrier_lookup']===false && !str_contains(json_encode($summary),'0000000000000001') && !str_contains(json_encode($summary),'customer'),'MCP summary must not leak source email IDs or account fields.');
+$pendingSummary=WLP_Contract_Shipping::manifest_summary(1);
+check($pendingSummary['status']==='awaiting_confirmation' && $pendingSummary['total_parcels']===1,'MCP summary must preserve pending parcels and exclude other orders.');
+check(WLP_Contract_Shipping::manifest_summary(999) instanceof WP_Error,'Missing orders must not produce an empty confirmed result.');
 echo "Manifest reconciliation regressions passed.\n";

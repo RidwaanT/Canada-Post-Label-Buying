@@ -3,6 +3,42 @@
 declare(strict_types=1);
 defined('ABSPATH') || exit;
 trait WLP_Manifest_Workspace {
+ /** Minimal read-only MCP evidence from the same projection as the admin page; never contacts the carrier. */
+ public static function manifest_summary(int $order_id) {
+  if (!wc_get_order($order_id)) { return new WP_Error('order_not_found','Order not found.',['status'=>404]); }
+  $all=self::read();
+  $evidence=(array)get_option('wlp_manifest_verification_v1',[]);
+  $evidence['parcels']=array_filter($evidence['parcels'] ?? [],static fn($proof)=>(int)($proof['order'] ?? 0)===$order_id);
+  $data=self::workspace_rows($all,$evidence);$parcels=[];
+  $append=static function(array $row,string $status,array $references=[],string $scope='none',?string $recorded=null) use (&$parcels,$order_id): void {
+   if ((int)$row['order']!==$order_id) { return; }
+   $warning=$row['reason'] ?? null;
+   if ($status==='awaiting_confirmation') { $warning='Already submitted; await confirmation. Do not resubmit.'; }
+   if ($status==='auto_billed') { $warning='Canada Post auto-billed this parcel with a surcharge; no further submission required. Penalty-only amount is not established.'; }
+   if ($status==='needs_review' && !$warning) { $warning='Manifest evidence needs review in Woo; do not infer submission from delivery status.'; }
+   $parcels[]=['tracking_number'=>(string)$row['tracking'],'package'=>str_starts_with($row['package'],'split:')?'Split parcel':(str_starts_with($row['package'],'primary:')?'Whole order':$row['package']),
+    'status'=>$status,'submission_eligible'=>$status==='needs_submission' && !empty($row['token']), 'handed_over'=>$row['handed_over'] ?? null,
+    'manifest_references'=>array_values(array_unique($references)),'reference_scope'=>$scope,'carrier_state'=>$row['proof']['state'] ?? null,
+    'carrier_checked_at'=>$row['proof']['checked_at'] ?? null,'evidence_at'=>$recorded,'warning'=>$warning ?: null];
+  };
+  foreach ($data['needs'] as $row) { $append($row,'needs_submission'); }
+  foreach ($data['review'] as $group) { foreach ($group['parcels'] as $row) { $append($row,$group['status']==='pending'?'awaiting_confirmation':'needs_review'); } }
+  foreach ($data['submitted'] as $group) {
+   foreach ($group['parcels'] as $row) {
+    $billing=$row['billing'] ?? null;
+    $refs=$billing ? [$billing['manifest']] : array_column($group['manifests'],'po');
+    $scope=$refs ? ($billing?'parcel':'batch') : 'none';
+    if (!$refs && !empty($row['proof']['po'])) { $refs=[$row['proof']['po']];$scope='parcel'; }
+    $dates=array_column($group['manifests'],'confirmed_at');
+    $append($row,$billing?'auto_billed':'confirmed',$refs,$scope,$billing['notice_date'] ?? ($dates ? max($dates) : ($row['proof']['checked_at'] ?? null)));
+   }
+  }
+  $counts=array_fill_keys(['needs_submission','awaiting_confirmation','needs_review','confirmed','auto_billed'],0);
+  foreach ($parcels as $row) { ++$counts[$row['status']]; }
+  return ['order_id'=>$order_id,'as_of'=>gmdate('c'),'live_carrier_lookup'=>false,'basis'=>'Current Woo saved manifest journal, verification cache and reviewed auto-billing notices. Delivery status is independent of manifest status.',
+   'counts'=>$counts,'parcels'=>array_slice($parcels,0,100),'total_parcels'=>count($parcels),'truncated'=>count($parcels)>100,
+   'status'=>!$parcels?'unknown':(count(array_filter($counts))===1 ? array_search(count($parcels),$counts,true) : 'mixed')];
+ }
  /** Projects journal and carrier evidence into unsubmitted parcels and submission history. */
  private static function workspace_rows(array $all, array $evidence): array {
   $eligible=self::ready_candidates($all,true); $needs=[]; $submitted=[]; $review=[]; $seen=[]; $autoBilled=[];

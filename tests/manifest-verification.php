@@ -7,7 +7,7 @@ function get_option($key,$default=false) { return $GLOBALS['options'][$key] ?? $
 function update_option($key,$value,$autoload=false) { $GLOBALS['options'][$key]=$value; return true; }
 function add_option($key,$value,$deprecated='',$autoload=false) { if (isset($GLOBALS['options'][$key])) return false; return update_option($key,$value); }
 function delete_option($key) { unset($GLOBALS['options'][$key]); }
-function wc_get_orders($args) { return []; }
+function wc_get_orders($args) { $GLOBALS["orderQuery"]=$args; return $GLOBALS["fakeOrders"] ?? []; }
 function wc_get_order_statuses() { return ['wc-completed'=>'Completed']; }
 function __($s,$domain='') { return $s; }
 function is_wp_error($r) { return false; }
@@ -46,4 +46,17 @@ $options['wlp_manifest_verification_v1']['parcels'][$key]['next_at']=0;
 WLP_Manifest_Verifier::run();check($options['wlp_manifest_verification_v1']['parcels'][$key]['next_at']>=time()+1799,'Repeated failures increase retry delay.');
 check($options['wlp_contract_batches_v1'][0]['shipments'][0]['state']==='created','Verification never rewrites submission history.');
 $options['wlp_manifest_verification_lock']=time();$count=count($reads);WLP_Manifest_Verifier::run();check(count($reads)===$count,'Concurrent worker is skipped.');
+class WC_Order {
+ public function __construct(private array $meta) {}
+ public function get_meta($key,$single=true) { return $this->meta[$key] ?? ''; }
+ public function get_id() { return 2; }
+}
+$GLOBALS['fakeOrders']=[new WC_Order([WLP_Meta_Keys::SHIPMENT_ID=>'789',WLP_Meta_Keys::TRACKING_NUMBER=>'987',WLP_Meta_Keys::SHIPPED_AT=>'2026-10-01','_wlp_split_shipments'=>['packages'=>[['label'=>['shipment_id'=>'654','tracking_number'=>'321']]]]])];
+$data=['parcels'=>[]];$candidates=[];
+$discover=new ReflectionMethod(WLP_Manifest_Verifier::class,'discover');
+$discover->invokeArgs(null,[$config,&$data,&$candidates]);
+check(count($candidates)===2 && count($data['parcels'])===2,'Discovery retains primary and split labels even on shipped orders.');
+check(in_array('wc-completed',$GLOBALS['orderQuery']['status'],true),'Discovery includes completed orders.');
+$GLOBALS['fakeOrders']=[];$candidates=[];$discover->invokeArgs(null,[$config,&$data,&$candidates]);
+check(count($candidates)===2,'Unprocessed discovered candidates survive the next worker batch.');
 echo "Manifest verification regressions passed.\n";

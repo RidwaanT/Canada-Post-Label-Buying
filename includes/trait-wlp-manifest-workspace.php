@@ -29,7 +29,7 @@ trait WLP_Manifest_Workspace {
     $token=hash('sha256',$key.'|'.$rid); $row['token']=isset($eligible[$token]) ? $token : '';
     $row['handed_over']=!empty($eligible[$token]['handed_over']);
     $row['reason']=$row['token'] ? '' : (self::hold_reason($shipment) ?: ($state==='created' ? 'Already handed over or batch needs review. Check the carrier before submission.' : 'Recover the existing carrier request before continuing.'));
-    if ($row['handed_over']) { $row['reason']='Already shipped or delivered — manifest still needs submission.'; }
+    if ($row['handed_over']) { $row['reason']='Already shipped or delivered - manifest still needs submission.'; }
     if (!empty($proof['error'])) { $row['reason']=$proof['error']; }
     if (isset($proof['state']) && !in_array($proof['state'],['created','unknown'],true)) { $row['token']='';$row['reason']='Carrier status needs review: '.$proof['state'].'.'; }
     if ($batch['day']>wp_date('Y-m-d')) { $row['token']='';$row['reason']='Available on the label dispatch date.'; }

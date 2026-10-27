@@ -19,6 +19,9 @@ final class WLP_Settings {
 	public const OPTION_API_USER        = 'wlp_cp_api_user';
 	public const OPTION_API_PASSWORD    = 'wlp_cp_api_password';
 	public const OPTION_CUSTOMER        = 'wlp_cp_customer_number';
+	public const OPTION_CONTRACT = 'wlp_cp_contract_number';
+	public const OPTION_DEPOSIT_POSTAL = 'wlp_cp_deposit_postal_code';
+	public const OPTION_PICKUP = 'wlp_cp_pickup';
 	public const OPTION_ORIGIN_NAME     = 'wlp_cp_origin_name';
 	public const OPTION_ORIGIN_COMPANY  = 'wlp_cp_origin_company';
 	public const OPTION_ORIGIN_EMAIL    = 'wlp_cp_origin_email';
@@ -41,6 +44,16 @@ final class WLP_Settings {
 	public const OPTION_EXTERNAL_META   = 'wlp_external_logistics_meta_mirror';
 	public const OPTION_CUSTOMER_NOTE   = 'wlp_label_customer_note';
 	public const OPTION_NOTE_TEMPLATE   = 'wlp_label_customer_note_template';
+	public const OPTION_RETURN_NAME     = 'wlp_return_name';
+	public const OPTION_RETURN_COMPANY  = 'wlp_return_company';
+	public const OPTION_RETURN_EMAIL    = 'wlp_return_email';
+	public const OPTION_RETURN_PHONE    = 'wlp_return_phone';
+	public const OPTION_RETURN_ADDR_1   = 'wlp_return_address_1';
+	public const OPTION_RETURN_ADDR_2   = 'wlp_return_address_2';
+	public const OPTION_RETURN_CITY     = 'wlp_return_city';
+	public const OPTION_RETURN_PROV     = 'wlp_return_province';
+	public const OPTION_RETURN_POSTAL   = 'wlp_return_postal_code';
+	public const OPTION_RETURN_TEMPLATE = 'wlp_return_customer_note_template';
 
 	/**
 	 * Registers settings.
@@ -53,12 +66,18 @@ final class WLP_Settings {
 	 * Registers setting definitions.
 	 */
 	public function register_settings(): void {
+		self::migrate_legacy_return_address();
+		register_setting( 'wlp_settings', self::OPTION_DEPOSIT_POSTAL, array( 'sanitize_callback' => 'sanitize_text_field' ) );
+		register_setting( 'wlp_settings', self::OPTION_PICKUP, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
+
 		foreach ( $this->text_options() as $option ) {
 			register_setting( 'wlp_settings', $option, array( 'sanitize_callback' => 'sanitize_text_field' ) );
 		}
 
 		register_setting( 'wlp_settings', self::OPTION_ORIGIN_PHONE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_phone' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_RETURN_PHONE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_phone' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_ORIGIN_PROV, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_province' ) ) );
+		register_setting( 'wlp_settings', self::OPTION_RETURN_PROV, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_province' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_API_PASSWORD, array( 'sanitize_callback' => 'sanitize_text_field' ) );
 		register_setting( 'wlp_settings', self::OPTION_SANDBOX, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_NOTIFY, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
@@ -71,7 +90,8 @@ final class WLP_Settings {
 		register_setting( 'wlp_settings', self::OPTION_SIGNATURE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_EXTERNAL_META, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_CUSTOMER_NOTE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_checkbox' ) ) );
-		register_setting( 'wlp_settings', self::OPTION_NOTE_TEMPLATE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_note_template' ) ) );
+			register_setting( 'wlp_settings', self::OPTION_NOTE_TEMPLATE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_note_template' ) ) );
+			register_setting( 'wlp_settings', self::OPTION_RETURN_TEMPLATE, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_return_note_template' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_PRESETS, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_presets' ) ) );
 		register_setting( 'wlp_settings', self::OPTION_STATUSES, array( 'sanitize_callback' => array( __CLASS__, 'sanitize_statuses' ) ) );
 	}
@@ -85,6 +105,7 @@ final class WLP_Settings {
 		return array(
 			self::OPTION_API_USER,
 			self::OPTION_CUSTOMER,
+			self::OPTION_CONTRACT,
 			self::OPTION_ORIGIN_NAME,
 			self::OPTION_ORIGIN_COMPANY,
 			self::OPTION_ORIGIN_EMAIL,
@@ -92,6 +113,13 @@ final class WLP_Settings {
 			self::OPTION_ORIGIN_ADDR_2,
 			self::OPTION_ORIGIN_CITY,
 			self::OPTION_ORIGIN_POSTAL,
+			self::OPTION_RETURN_NAME,
+			self::OPTION_RETURN_COMPANY,
+			self::OPTION_RETURN_EMAIL,
+			self::OPTION_RETURN_ADDR_1,
+			self::OPTION_RETURN_ADDR_2,
+			self::OPTION_RETURN_CITY,
+			self::OPTION_RETURN_POSTAL,
 		);
 	}
 
@@ -237,16 +265,102 @@ final class WLP_Settings {
 	 */
 	public static function customer_label_note_template(): string {
 		$template = (string) get_option( self::OPTION_NOTE_TEMPLATE, self::default_customer_label_note_template() );
+		$template = trim( str_replace( array( "\r\n", "\r" ), "\n", $template ) );
+
+		if ( '' === $template || self::old_default_customer_label_note_template() === $template ) {
+			return self::default_customer_label_note_template();
+		}
+
+		return $template;
+	}
+
+	/**
+	 * Returns the configured customer-facing return label note template.
+	 */
+	public static function return_customer_note_template(): string {
+		$template = (string) get_option( self::OPTION_RETURN_TEMPLATE, self::default_return_customer_note_template() );
 		$template = trim( $template );
 
-		return '' === $template ? self::default_customer_label_note_template() : $template;
+		if ( '' === $template || self::old_default_return_customer_note_template() === $template ) {
+			return self::default_return_customer_note_template();
+		}
+
+		return $template;
 	}
 
 	/**
 	 * Returns the default customer-facing label note template.
 	 */
 	public static function default_customer_label_note_template(): string {
+		return "Hi {first_name},\n\nYour shipping label for order #{order_number} is ready. We are preparing your package for Canada Post.\n\nService: {service_name}\nTracking: {tracking_number}\nEstimated delivery: {estimated_delivery_date}\n\n<a href=\"{tracking_url}\">Track your package</a>\n\nThis is a carrier estimate, subject to acceptance and transit conditions. Tracking will update after Canada Post scans the parcel.\n\nPeptideGo";
+	}
+
+	/**
+	 * Returns the previous built-in customer-facing label note template.
+	 */
+	private static function old_default_customer_label_note_template(): string {
 		return "Hi {first_name},\n\nCongratulations on your order! We have generated your shipping label and our team in Hamilton, Ontario is currently preparing your package for dispatch.\n\nYour Tracking Details:\n\nCarrier: Canada Post ({service_label})\n\nTracking Number: {tracking_number}\n\n<a href=\"{tracking_url}\">Track packages here</a>\n\nStatus: Label Created / Preparing for Shipment\n\nNote: Please allow up to 1 business day for Canada Post to scan the package into their system and provide an estimated delivery date.";
+	}
+
+	/**
+	 * Returns the default return label customer note template.
+	 */
+	public static function default_return_customer_note_template(): string {
+		return "Hi {first_name},\n\nWe created your Canada Post return label for order #{order_number}.\n\nReturn tracking: {return_tracking_number}\n\n<a href=\"{return_label_url}\">Open your return label here</a>\n\nHow to send it back:\n1. Put the item in a secure box or mailer.\n2. Keep the box taped shut and secured.\n3. Print the label and attach it, or show the label on your phone at Canada Post so they can scan it.\n4. Drop it off at any Canada Post location.\n\nFind a nearby Canada Post location:\nhttps://www.canadapost-postescanada.ca/cpc/en/tools/find-a-post-office.page\n\n<a href=\"{return_tracking_url}\">Track the return here</a>\n\nReturn address:\n{return_address}\n\nOnce Canada Post scans the package, tracking will start updating.";
+	}
+
+	/**
+	 * Returns the previous built-in return label customer note template.
+	 */
+	private static function old_default_return_customer_note_template(): string {
+		return "Hi {first_name},\n\nWe created your Canada Post return label for order #{order_number}.\n\nReturn tracking: {return_tracking_number}\n\n<a href=\"{return_tracking_url}\">Track the return here</a>\n\nPlease print the label, attach it to the sealed package, and drop it off with Canada Post. Once the return is moving, reply here if you want us to watch it with you.\n\nReturn address:\n{return_address}";
+	}
+
+	/**
+	 * Returns a return address setting with a sensible default.
+	 */
+	public static function return_option( string $option ): string {
+		$value = trim( (string) get_option( $option, '' ) );
+		if ( self::OPTION_RETURN_NAME === $option && 'PeptideGo Returns' === $value ) {
+			return 'Ground Floor';
+		}
+
+		if ( '' !== $value ) {
+			return $value;
+		}
+
+		return match ( $option ) {
+			self::OPTION_RETURN_NAME    => 'Ground Floor',
+			self::OPTION_RETURN_COMPANY => 'North End Tech Inc.',
+			self::OPTION_RETURN_ADDR_1  => '1 Hunter St E',
+			self::OPTION_RETURN_CITY    => 'Hamilton',
+			self::OPTION_RETURN_PROV    => 'ON',
+			self::OPTION_RETURN_POSTAL  => 'L8N 3W1',
+			default                     => '',
+		};
+	}
+
+	/**
+	 * Replaces the old customer-facing return addressee without disturbing custom settings.
+	 */
+	private static function migrate_legacy_return_address(): void {
+		if ( 'PeptideGo Returns' === trim( (string) get_option( self::OPTION_RETURN_NAME, '' ) ) ) {
+			update_option( self::OPTION_RETURN_NAME, 'Ground Floor', false );
+		}
+	}
+
+	/** Preserve a saved commitment, otherwise use the wholesale tier. */
+	public static function wholesale_service_code( WC_Order $order ): string {
+		$release = (string) $order->get_meta( '_pg_wholesale_release_option', true );
+		if ( false !== stripos( $release, 'priority' ) ) { return 'DOM.PC'; }
+		if ( false !== stripos( $release, 'xpresspost' ) ) { return 'DOM.XP'; }
+		$details = (string) $order->get_meta( '_pg_wholesale_quote_details', true );
+		if ( preg_match( '/^Tier:\s*(Starter|Standard|Volume|Distributor) Tier\b/mi', $details, $tier ) ) {
+			return 'starter' === strtolower( $tier[1] ) ? 'DOM.XP' : 'DOM.PC';
+		}
+		preg_match_all( '/\b(\d+)\s+vials?\b/i', (string) $order->get_meta( '_pg_wholesale_quote_products', true ), $counts );
+		$count = array_sum( array_map( 'intval', $counts[1] ?? array() ) );
+		return $count > 0 && $count < 100 ? 'DOM.XP' : 'DOM.PC';
 	}
 
 	/**
@@ -293,11 +407,22 @@ final class WLP_Settings {
 	 *
 	 * @param mixed $value Raw value.
 	 */
-	public static function sanitize_note_template( $value ): string {
-		$template = trim( wp_kses_post( (string) $value ) );
+		public static function sanitize_note_template( $value ): string {
+			$template = trim( wp_kses_post( (string) $value ) );
 
-		return '' === $template ? self::default_customer_label_note_template() : $template;
-	}
+			return '' === $template ? self::default_customer_label_note_template() : $template;
+		}
+
+		/**
+		 * Sanitizes the customer-facing return label note template.
+		 *
+		 * @param mixed $value Raw value.
+		 */
+		public static function sanitize_return_note_template( $value ): string {
+			$template = trim( wp_kses_post( (string) $value ) );
+
+			return '' === $template ? self::default_return_customer_note_template() : $template;
+		}
 
 	/**
 	 * Sanitizes a non-negative float option.

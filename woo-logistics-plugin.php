@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Woo Logistics Plugin
  * Description: Adds a WooCommerce logistics desk for Canada Post label creation, printing, and tracking metadata.
- * Version: 0.1.18
+ * Version: 0.1.232
  * Author: North End Tech
  * Requires PHP: 8.1
  * Requires Plugins: woocommerce
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 if ( ! defined( 'WLP_VERSION' ) ) {
-	define( 'WLP_VERSION', '0.1.18' );
+	define( 'WLP_VERSION', '0.1.232' );
 }
 
 if ( ! defined( 'WLP_FILE' ) ) {
@@ -124,6 +124,17 @@ if ( ! function_exists( 'wlp_shutdown_guard' ) ) {
 
 register_shutdown_function( 'wlp_shutdown_guard' );
 
+// Customer portal hooks stay separate from the admin-only Logistics bootstrap.
+add_action( 'plugins_loaded', static function(): void {
+	if ( ! class_exists( 'WooCommerce' ) || 'yes' === get_option( 'wlp_bootstrap_disabled', 'no' ) ) { return; }
+	require_once __DIR__ . '/includes/class-wlp-customer-portal.php';
+	WLP_Customer_Portal::register();
+	require_once __DIR__ . '/includes/class-wlp-retail-tracking.php';
+	WLP_Retail_Tracking::register();
+	require_once __DIR__ . '/includes/class-wlp-wholesale-reviews.php';
+	WLP_Wholesale_Reviews::register();
+}, 11 );
+
 if ( PHP_VERSION_ID < 80100 ) {
 	add_action(
 		'admin_notices',
@@ -143,13 +154,22 @@ if ( ! function_exists( 'wlp_load_class_files' ) ) {
 	 * Loads plugin classes after WordPress has finished activating the plugin.
 	 */
 	function wlp_load_class_files(): void {
+		$stock_file = WLP_PATH . 'includes/class-wlp-supplier-stock.php';
+		if ( is_admin() && is_readable( $stock_file ) && ! class_exists( 'WLP_Supplier_Stock', false ) ) {
+			require_once $stock_file;
+			WLP_Supplier_Stock::register();
+		}
 		$wlp_class_files = array(
 			'WLP_Meta_Keys'          => 'includes/class-wlp-meta-keys.php',
+			'WLP_Supplier_Batches'   => 'includes/class-wlp-supplier-batches.php',
+			'WLP_Split_Shipments'    => 'includes/class-wlp-split-shipments.php',
 			'WLP_Settings'           => 'includes/class-wlp-settings.php',
+			'WLP_Meta_CAPI'          => 'includes/class-wlp-meta-capi.php',
 			'WLP_Order_Logistics'    => 'includes/class-wlp-order-logistics.php',
 			'WLP_Label_Normalizer'   => 'includes/class-wlp-label-normalizer.php',
 			'WLP_Canada_Post_Client' => 'includes/class-wlp-canada-post-client.php',
 			'WLP_Admin'              => 'includes/class-wlp-admin.php',
+			'WLP_Wholesale_Ops_API'  => 'includes/class-wlp-wholesale-ops-api.php',
 			'WLP_Plugin'             => 'includes/class-wlp-plugin.php',
 		);
 
@@ -172,12 +192,28 @@ if ( ! function_exists( 'wlp_load_class_files' ) ) {
 	}
 }
 
+// Register on every request: Action Scheduler's async runner is not a wlp_* AJAX action.
+add_action( 'wlp_manifest_quick_worker', static function ( string $id, int $attempt = 0 ): void {
+	if ( ! class_exists( 'WooCommerce' ) ) { return; }
+	wlp_load_class_files();
+	require_once WLP_PATH . 'includes/class-wlp-contract-shipping.php';
+	WLP_Contract_Shipping::quick_worker( $id, $attempt );
+}, 10, 2 );
+
 if ( ! function_exists( 'wlp_should_boot_admin' ) ) {
 	/**
 	 * Returns true only for admin surfaces owned by this plugin.
 	 */
 	function wlp_should_boot_admin(): bool {
 		$action = isset( $_REQUEST['action'] ) ? sanitize_key( wp_unslash( $_REQUEST['action'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+
+		if ( function_exists( 'wp_doing_cron' ) && wp_doing_cron() ) {
+			return true;
+		}
+
+		if ( function_exists( 'is_admin' ) && ! is_admin() && ! ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() ) && ! str_starts_with( $action, 'wlp_' ) ) {
+			return false;
+		}
 
 		if ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() ) {
 			return str_starts_with( $action, 'wlp_' );
@@ -206,6 +242,10 @@ if ( ! function_exists( 'wlp_activate' ) ) {
 		add_option( WLP_Settings::OPTION_EXTERNAL_META, 'no' );
 		add_option( WLP_Settings::OPTION_CUSTOMER_NOTE, 'yes' );
 		add_option( WLP_Settings::OPTION_NOTE_TEMPLATE, WLP_Settings::default_customer_label_note_template() );
+
+		if ( function_exists( 'wp_next_scheduled' ) && function_exists( 'wp_schedule_event' ) && false === wp_next_scheduled( 'wlp_reorder_followup_cron' ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'wlp_reorder_followup_cron' );
+		}
 	}
 }
 
@@ -214,6 +254,34 @@ register_activation_hook( WLP_FILE, 'wlp_activate' );
 if ( 'yes' === get_option( 'wlp_bootstrap_disabled', 'no' ) ) {
 	return;
 }
+
+// Order transitions can originate from REST, checkout, cron or the admin.
+add_action( 'plugins_loaded', static function (): void {
+	if ( class_exists( 'WooCommerce' ) ) {
+		require_once WLP_PATH . 'includes/class-wlp-wholesale-purchase.php';
+		WLP_Wholesale_Purchase::boot();
+	}
+}, 5 );
+
+add_action(
+	'rest_api_init',
+	static function (): void {
+		if ( ! class_exists( 'WooCommerce' ) ) {
+			return;
+		}
+
+		try {
+			wlp_load_class_files();
+			$admin = new WLP_Admin();
+			if ( ! wlp_should_boot_admin() ) {
+				$admin->register_processing_email_hooks();
+			}
+			( new WLP_Wholesale_Ops_API( $admin ) )->register_routes();
+		} catch ( Throwable $error ) {
+			error_log( 'Woo Logistics wholesale operations API failed to register: ' . $error->getMessage() ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+		}
+	}
+);
 
 add_action(
 	'before_woocommerce_init',

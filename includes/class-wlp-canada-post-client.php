@@ -79,7 +79,33 @@ final class WLP_Canada_Post_Client {
 	}
 
 	/**
-	 * Creates a Canada Post non-contract shipment and returns label details.
+	 * Fetches return-label rates from the customer's address back to the configured return address.
+	 *
+	 * @param array<string, float|string> $preset Package preset.
+	 * @return array<int, array<string, string>>
+	 */
+	public function get_return_rates( WC_Order $order, array $preset, ?bool $signature_required = null ): array {
+		$this->assert_canadian_destination( $order );
+		$origin_postal      = $this->normalize_postal_code( (string) $order->get_shipping_postcode() );
+		$destination_postal = $this->normalize_postal_code( $this->required_return_option( WLP_Settings::OPTION_RETURN_POSTAL, __( 'Return postal code', 'woo-logistics-plugin' ) ) );
+
+		if ( '' === $origin_postal ) {
+			throw new RuntimeException( __( 'Order is missing a customer shipping postal code for the return label.', 'woo-logistics-plugin' ) );
+		}
+
+		$body = $this->request(
+			'POST',
+			'/rs/ship/price',
+			$this->build_rate_xml_for_postals( $order, $origin_postal, $destination_postal, $preset, false, true ),
+			'application/vnd.cpc.ship.rate-v4+xml',
+			'application/vnd.cpc.ship.rate-v4+xml'
+		);
+
+		return $this->parse_rates( $body );
+	}
+
+	/**
+	 * Creates a Canada Post commercial shipment and returns label details.
 	 *
 	 * @param WC_Order                    $order WooCommerce order.
 	 * @param array<string, float|string> $preset Package preset.
@@ -87,17 +113,25 @@ final class WLP_Canada_Post_Client {
 	 */
 	public function create_shipment( WC_Order $order, array $preset, string $service_code, ?bool $signature_required = null, bool $card_for_pickup = false ): array {
 		$this->assert_canadian_destination( $order );
-		$customer_number = $this->required_option( WLP_Settings::OPTION_CUSTOMER, __( 'Customer number', 'woo-logistics-plugin' ) );
+		require_once WLP_PATH . 'includes/class-wlp-contract-shipping.php';
+		return WLP_Contract_Shipping::create( $this, $order, $this->build_shipment_xml( $order, $preset, $service_code, $signature_required, $card_for_pickup ), array(
+			'package' => $preset['_wlp_package_id'] ?? ('primary:' . (int) $order->get_meta('_wlp_contract_generation',true)),
+			'day' => $preset['expected_mailing_date'] ?? wp_date('Y-m-d'),
+			'service_code' => $service_code,
+		) );
+	}
 
-		$body = $this->request(
-			'POST',
-			'/rs/' . rawurlencode( $customer_number ) . '/ncshipment',
-			$this->build_shipment_xml( $order, $preset, $service_code, $signature_required, $card_for_pickup ),
-			'application/vnd.cpc.ncshipment-v4+xml',
-			'application/vnd.cpc.ncshipment-v4+xml'
-		);
-
-		return $this->parse_shipment( $body );
+	/**
+	 * Creates a Canada Post return shipment from the customer back to the configured return address.
+	 *
+	 * @param array<string, float|string> $preset Package preset.
+	 * @return array<string, string>
+	 */
+	public function create_return_shipment( WC_Order $order, array $preset, string $service_code, ?bool $signature_required = null ): array {
+		$this->assert_canadian_destination( $order );
+		$this->auth_header(); // Validate credentials before recording a carrier attempt.
+		require_once WLP_PATH . 'includes/class-wlp-authorized-returns.php';
+		return WLP_Authorized_Returns::create( $this, $order, $this->build_return_shipment_xml( $order, $preset, $service_code ), $service_code );
 	}
 
 	/**
@@ -106,12 +140,21 @@ final class WLP_Canada_Post_Client {
 	 * @return array{body: string, content_type: string}
 	 */
 	public function download_artifact( string $url ): array {
+		require_once WLP_PATH . 'includes/class-wlp-contract-shipping.php';
+		WLP_Contract_Shipping::assert_printable( $url );
+		$cached = get_option( 'wlp_return_pdf_' . hash( 'sha256', $url ), '' );
+		if ( is_string( $cached ) && '' !== $cached ) {
+			$pdf = base64_decode( $cached, true );
+			if ( is_string( $pdf ) && str_starts_with( $pdf, '%PDF-' ) ) {
+				return array( 'body' => $pdf, 'content_type' => 'application/pdf' );
+			}
+		}
 		$response = wp_remote_get(
 			esc_url_raw( $url ),
 			array(
 				'headers' => array(
 					'Authorization' => $this->auth_header(),
-					'Accept'        => 'application/pdf, application/octet-stream, */*',
+					'Accept'        => 'application/pdf',
 				),
 				'timeout' => 30,
 			)
@@ -123,7 +166,14 @@ final class WLP_Canada_Post_Client {
 
 		$status = (int) wp_remote_retrieve_response_code( $response );
 		if ( $status < 200 || $status >= 300 ) {
-			throw new RuntimeException( __( 'Failed to download Canada Post label artifact.', 'woo-logistics-plugin' ) );
+			$hint = match ( $status ) {
+				401 => 'Canada Post rejected the saved API credentials. Verify the production API user and password in Logistics settings.',
+				403 => 'Canada Post denied access to this existing label. Verify that the credentials belong to the account that created it.',
+				404, 410 => 'Canada Post could not find this label or its download link has expired.',
+				406 => 'Canada Post rejected the requested label format.',
+				default => 'Canada Post could not return the existing label. Try again later.',
+			};
+			throw new RuntimeException( sprintf( 'Label download failed (HTTP %d). %s Do not buy replacement postage to retry printing.', $status, $hint ), $status );
 		}
 
 		$content_type = (string) wp_remote_retrieve_header( $response, 'content-type' );
@@ -142,7 +192,7 @@ final class WLP_Canada_Post_Client {
 	/**
 	 * Fetches the current Canada Post tracking estimate for an in-transit PIN.
 	 *
-	 * @return array{expected_delivery_date: string, actual_delivery_date: string}
+	 * @return array{expected_delivery_date: string, actual_delivery_date: string, carrier_shipped_at: string}
 	 */
 	public function get_tracking_estimate( string $tracking_number, bool $use_changed_expected_date = true ): array {
 		$tracking_number = trim( $tracking_number );
@@ -176,6 +226,7 @@ final class WLP_Canada_Post_Client {
 		return array(
 			'expected_delivery_date' => $use_changed_expected_date && '' !== $changed_expected_date ? $changed_expected_date : trim( $summary['expected_delivery_date'] ?? '' ),
 			'actual_delivery_date'   => trim( $summary['actual_delivery_date'] ?? '' ),
+			'carrier_shipped_at'     => $detail['carrier_shipped_at'] ?? '',
 		);
 	}
 
@@ -220,8 +271,23 @@ final class WLP_Canada_Post_Client {
 	/**
 	 * Performs a Canada Post XML request with SLM retry handling.
 	 */
+	/** Internal transport for the authenticated contract workflow; URLs are carrier-only. */
+	public function contract_transport( string $method, string $path, string $xml = '', string $media = 'application/vnd.cpc.shipment-v8+xml' ): string {
+		if ( str_starts_with( $path, 'https://' ) ) {
+			$prefix = $this->base_url();
+			if ( ! str_starts_with( $path, $prefix . '/rs/' ) ) { throw new RuntimeException( 'Unexpected Canada Post endpoint.' ); }
+			$path = substr( $path, strlen( $prefix ) );
+		}
+		if ( ! str_starts_with( $path, '/rs/' ) ) { throw new RuntimeException( 'Unexpected Canada Post endpoint.' ); }
+		return 'GET' === $method ? $this->request_get( $path, $media ) : $this->request( $method, $path, $xml, $media, $media );
+	}
+
+	public function contract_is_sandbox(): bool { return $this->sandbox_enabled(); }
+
+	public function contract_parse_shipment( string $body ): array { return $this->parse_shipment( $body ); }
+
 	private function request( string $method, string $path, string $xml, string $content_type, string $accept ): string {
-		$attempts   = 3;
+		$attempts   = str_contains( $content_type, 'cpc.shipment-' ) || str_contains( $content_type, 'cpc.manifest-' ) || str_contains( $content_type, 'cpc.authreturn-' ) ? 1 : 3;
 		$delay_ms   = 1500;
 		$last_error = null;
 
@@ -253,7 +319,7 @@ final class WLP_Canada_Post_Client {
 			}
 
 			$message    = $this->extract_error_message( $body, __( 'Canada Post request failed.', 'woo-logistics-plugin' ) );
-			$last_error = new RuntimeException( $message );
+			$last_error = new RuntimeException( $message, $status );
 
 			if ( ! str_contains( strtolower( $message ), 'rejected by slm monitor' ) || $attempt >= $attempts ) {
 				break;
@@ -287,12 +353,13 @@ final class WLP_Canada_Post_Client {
 
 		$body   = (string) wp_remote_retrieve_body( $response );
 		$status = (int) wp_remote_retrieve_response_code( $response );
+		if ( 202 === $status ) { throw new RuntimeException( 'Canada Post is still processing this request. Refresh or recover later; do not repurchase.', 202 ); }
 
 		if ( $status >= 200 && $status < 300 ) {
 			return $body;
 		}
 
-		throw new RuntimeException( $this->extract_error_message( $body, __( 'Canada Post request failed.', 'woo-logistics-plugin' ) ) );
+		throw new RuntimeException( $this->extract_error_message( $body, __( 'Canada Post request failed.', 'woo-logistics-plugin' ) ), $status );
 	}
 
 	/**
@@ -301,8 +368,35 @@ final class WLP_Canada_Post_Client {
 	 * @param array<string, float|string> $preset Package preset.
 	 */
 	private function build_rate_xml( WC_Order $order, string $destination_postal, array $preset, ?bool $signature_required = null ): string {
+		$origin_postal = $this->normalize_postal_code( $this->required_option( WLP_Settings::OPTION_ORIGIN_POSTAL, __( 'Origin postal code', 'woo-logistics-plugin' ) ) );
+
+		return $this->build_rate_xml_for_postals( $order, $origin_postal, $destination_postal, $preset, $signature_required );
+	}
+
+	/**
+	 * Builds a Canada Post rate XML payload between two Canadian postal codes.
+	 *
+	 * @param array<string, float|string> $preset Package preset.
+	 */
+	private function build_rate_xml_for_postals( WC_Order $order, string $origin_postal, string $destination_postal, array $preset, ?bool $signature_required = null, bool $is_return = false ): string {
 		$xml = new SimpleXMLElement( '<mailing-scenario xmlns="http://www.canadapost.ca/ws/ship/rate-v4"></mailing-scenario>' );
 		$xml->addChild( 'customer-number', $this->required_option( WLP_Settings::OPTION_CUSTOMER, __( 'Customer number', 'woo-logistics-plugin' ) ) );
+		$contract = trim( (string) get_option( WLP_Settings::OPTION_CONTRACT, '' ) );
+		if ( '' === $contract ) { throw new RuntimeException( 'Save your commercial agreement number in Logistics settings before getting rates.' ); }
+		if ( '' !== $contract ) {
+			if ( ! preg_match( '/^[0-9]{1,10}$/D', $contract ) ) { throw new RuntimeException( 'Agreement number must contain 1 to 10 digits.' ); }
+			$xml->addChild( 'contract-id', str_pad( $contract, 10, '0', STR_PAD_LEFT ) );
+			if ( ! $is_return && 'yes' !== get_option( WLP_Settings::OPTION_PICKUP, 'no' ) ) {
+				$deposit = $this->normalize_postal_code( (string) get_option( WLP_Settings::OPTION_DEPOSIT_POSTAL, '' ) );
+				if ( '' !== $deposit ) { $origin_postal = $deposit; }
+			}
+		}
+		// Only dated split-package rate requests set this; existing retail callers are unchanged.
+		if ( ! empty( $preset['expected_mailing_date'] ) ) {
+			$date = DateTimeImmutable::createFromFormat( '!Y-m-d', (string) $preset['expected_mailing_date'] );
+			if ( ! $date || $date->format( 'Y-m-d' ) !== $preset['expected_mailing_date'] ) { throw new RuntimeException( 'Invalid expected mailing date.' ); }
+			$xml->addChild( 'expected-mailing-date', $date->format( 'Y-m-d' ) );
+		}
 		$parcel = $xml->addChild( 'parcel-characteristics' );
 		$parcel->addChild( 'weight', $this->parcel_weight( $order, $preset ) );
 		$dimensions = $parcel->addChild( 'dimensions' );
@@ -310,11 +404,68 @@ final class WLP_Canada_Post_Client {
 		$dimensions->addChild( 'width', (string) $preset['width'] );
 		$dimensions->addChild( 'height', (string) $preset['height'] );
 		$this->add_delivery_options( $xml, $signature_required );
-		$xml->addChild( 'origin-postal-code', $this->normalize_postal_code( $this->required_option( WLP_Settings::OPTION_ORIGIN_POSTAL, __( 'Origin postal code', 'woo-logistics-plugin' ) ) ) );
+		$xml->addChild( 'origin-postal-code', $origin_postal );
 		$destination = $xml->addChild( 'destination' );
 		$domestic    = $destination->addChild( 'domestic' );
 		$domestic->addChild( 'postal-code', $destination_postal );
 
+		return (string) $xml->asXML();
+	}
+
+	/**
+	 * Builds an Authorized Returns v2 payload, separate from outbound manifests.
+	 *
+	 * @param array<string, float|string> $preset Package preset.
+	 */
+	private function build_return_shipment_xml( WC_Order $order, array $preset, string $service_code, ?bool $signature_required = null ): string {
+		if ( ! in_array( $service_code, array( 'DOM.RP', 'DOM.EP', 'DOM.XP', 'DOM.PC' ), true ) ) {
+			throw new RuntimeException( 'Unsupported domestic return service.' );
+		}
+		$xml = new SimpleXMLElement( '<authorized-return xmlns="http://www.canadapost.ca/ws/authreturn-v2"/>' );
+		$xml->addChild( 'service-code', $service_code );
+		$add = static function ( SimpleXMLElement $parent, string $key, string $value, int $limit ): void {
+			$value = trim( $value );
+			if ( '' === $value || mb_strlen( $value ) > $limit ) {
+				throw new RuntimeException( 'Missing or overlong return address field: ' . $key );
+			}
+			$parent->addChild( $key, htmlspecialchars( $value, ENT_XML1 | ENT_QUOTES, 'UTF-8' ) );
+		};
+		$returner = $xml->addChild( 'returner' );
+		$add( $returner, 'name', $this->destination_name( $order ), 44 );
+		$address = $returner->addChild( 'domestic-address' );
+		$add( $address, 'address-line-1', $this->destination_address_line_1( $order ), 44 );
+		if ( '' !== trim( (string) $order->get_shipping_address_2() ) ) {
+			$add( $address, 'address-line-2', (string) $order->get_shipping_address_2(), 44 );
+		}
+		$add( $address, 'city', (string) $order->get_shipping_city(), 40 );
+		$add( $address, 'province', $this->normalize_province( (string) $order->get_shipping_state() ), 2 );
+		$add( $address, 'postal-code', $this->normalize_postal_code( (string) $order->get_shipping_postcode() ), 6 );
+		$receiver = $xml->addChild( 'receiver' );
+		$add( $receiver, 'name', $this->required_return_option( WLP_Settings::OPTION_RETURN_NAME, 'Return contact name' ), 44 );
+		$company = WLP_Settings::return_option( WLP_Settings::OPTION_RETURN_COMPANY );
+		if ( '' !== trim( $company ) ) { $add( $receiver, 'company', $company, 44 ); }
+		$address = $receiver->addChild( 'domestic-address' );
+		$add( $address, 'address-line-1', $this->required_return_option( WLP_Settings::OPTION_RETURN_ADDR_1, 'Return address' ), 44 );
+		$line2 = WLP_Settings::return_option( WLP_Settings::OPTION_RETURN_ADDR_2 );
+		if ( '' !== trim( $line2 ) ) { $add( $address, 'address-line-2', $line2, 44 ); }
+		$add( $address, 'city', $this->required_return_option( WLP_Settings::OPTION_RETURN_CITY, 'Return city' ), 40 );
+		$add( $address, 'province', $this->normalize_province( $this->required_return_option( WLP_Settings::OPTION_RETURN_PROV, 'Return province' ) ), 2 );
+		$add( $address, 'postal-code', $this->normalize_postal_code( $this->required_return_option( WLP_Settings::OPTION_RETURN_POSTAL, 'Return postal code' ) ), 6 );
+		$parcel = $xml->addChild( 'parcel-characteristics' );
+		$parcel->addChild( 'weight', $this->parcel_weight( $order, $preset ) );
+		$dimensions = $parcel->addChild( 'dimensions' );
+		foreach ( array( 'length', 'width', 'height' ) as $dimension ) {
+			$value = (float) ( $preset[ $dimension ] ?? 0 );
+			if ( $value <= 0 || $value > 999.9 ) { throw new RuntimeException( 'Invalid return parcel dimension.' ); }
+			$dimensions->addChild( $dimension, number_format( $value, 1, '.', '' ) );
+		}
+		$print = $xml->addChild( 'print-preferences' );
+		$print->addChild( 'output-format', '8.5x11' );
+		$print->addChild( 'encoding', 'PDF' );
+		$print->addChild( 'show-packing-instructions', 'true' );
+		$xml->addChild( 'settlement-info' );
+		$refs = $xml->addChild( 'references' );
+		$add( $refs, 'customer-ref-1', substr( 'Return #' . $order->get_order_number(), 0, 35 ), 35 );
 		return (string) $xml->asXML();
 	}
 
@@ -375,7 +526,7 @@ final class WLP_Canada_Post_Client {
 			$destination->addChild( 'client-voice-number', $destination_phone );
 		}
 		$destination_address = $destination->addChild( 'address-details' );
-		$destination_address->addChild( 'address-line-1', (string) $order->get_shipping_address_1() );
+		$destination_address->addChild( 'address-line-1', $this->destination_address_line_1( $order ) );
 		if ( '' !== trim( (string) $order->get_shipping_address_2() ) ) {
 			$destination_address->addChild( 'address-line-2', (string) $order->get_shipping_address_2() );
 		}
@@ -543,10 +694,26 @@ final class WLP_Canada_Post_Client {
 	 */
 	private function parse_tracking_detail( string $body ): array {
 		$xml = $this->xml( $body );
+		$scans = array();
+		// Electronic label/manifest events are not physical custody. Unknown events fail closed.
+		foreach ( $xml->xpath( '//*[local-name()="significant-events"]/*' ) ?: array() as $event ) {
+			$description = trim( (string) ( $event->xpath( './*[local-name()="event-description"]' )[0] ?? '' ) );
+			if ( ! preg_match( '/^Item (?:picked up by Canada Post|accepted at the Post Office|processed(?: at postal facility)?|in transit|out for delivery|successfully delivered)\.?$/i', $description ) ) { continue; }
+			$date = trim( (string) ( $event->xpath( './*[local-name()="event-date"]' )[0] ?? '' ) );
+			$time = trim( (string) ( $event->xpath( './*[local-name()="event-time"]' )[0] ?? '' ) );
+			$zone = trim( (string) ( $event->xpath( './*[local-name()="event-time-zone"]' )[0] ?? '' ) );
+			$offsets = array( 'NST' => '-03:30', 'NDT' => '-02:30', 'AST' => '-04:00', 'ADT' => '-03:00', 'EST' => '-05:00', 'EDT' => '-04:00', 'CST' => '-06:00', 'CDT' => '-05:00', 'MST' => '-07:00', 'MDT' => '-06:00', 'PST' => '-08:00', 'PDT' => '-07:00', 'UTC' => '+00:00' );
+			if ( ! isset( $offsets[$zone] ) ) { continue; }
+			$stamp = $date . ' ' . $time;
+			$parsed = DateTimeImmutable::createFromFormat( '!Y-m-d H:i:s', $stamp, new DateTimeZone( $offsets[$zone] ) );
+			if ( ! $parsed || $parsed->format( 'Y-m-d H:i:s' ) !== $stamp || $parsed->getTimestamp() > time() ) { continue; }
+			$scans[] = $parsed->setTimezone( wp_timezone() )->format( 'Y-m-d H:i:s' );
+		}
 
 		return array(
 			'expected_delivery_date' => (string) ( $xml->xpath( '//*[local-name()="expected-delivery-date"]' )[0] ?? '' ),
 			'changed_expected_date'  => (string) ( $xml->xpath( '//*[local-name()="changed-expected-date"]' )[0] ?? '' ),
+			'carrier_shipped_at'     => $scans ? min( $scans ) : '',
 		);
 	}
 
@@ -599,6 +766,24 @@ final class WLP_Canada_Post_Client {
 				sprintf(
 				/* translators: %s: Canada Post setting key. */
 					__( 'Canada Post setting "%s" is required before rates or labels can be created.', 'woo-logistics-plugin' ),
+					$label
+				)
+			);
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Reads a required return-address settings value.
+	 */
+	private function required_return_option( string $option, string $label ): string {
+		$value = WLP_Settings::return_option( $option );
+		if ( '' === $value ) {
+			throw new RuntimeException(
+				sprintf(
+				/* translators: %s: return address setting label. */
+					__( 'Return setting "%s" is required before return labels can be created.', 'woo-logistics-plugin' ),
 					$label
 				)
 			);
@@ -678,6 +863,9 @@ final class WLP_Canada_Post_Client {
 	 * @param array<string, float|string> $preset Package preset.
 	 */
 	private function parcel_weight( WC_Order $order, array $preset ): string {
+		if ( ! empty( $preset['wlp_measured_weight'] ) ) {
+			return $this->format_weight( (float) $preset['weight'] );
+		}
 		if ( ! WLP_Settings::use_product_weight() ) {
 			return $this->format_weight( (float) $preset['weight'] );
 		}
@@ -802,6 +990,46 @@ final class WLP_Canada_Post_Client {
 		}
 
 		return $digits;
+	}
+
+	/**
+	 * Returns a Canada Post-safe destination street line.
+	 */
+	private function destination_address_line_1( WC_Order $order ): string {
+		$line = trim( (string) $order->get_shipping_address_1() );
+		if ( '' === $line || ! str_contains( $line, ',' ) ) {
+			return $line;
+		}
+
+		$parts = array_values(
+			array_filter(
+				array_map(
+					static fn ( string $part ): string => trim( $part ),
+					explode( ',', $line )
+				),
+				static fn ( string $part ): bool => '' !== $part
+			)
+		);
+
+		if ( count( $parts ) < 2 ) {
+			return $line;
+		}
+
+		$city       = strtolower( trim( (string) $order->get_shipping_city() ) );
+		$province   = strtolower( trim( (string) $order->get_shipping_state() ) );
+		$province   = '' !== $province ? strtolower( $this->normalize_province( $province ) ) : '';
+		$country    = strtolower( trim( (string) $order->get_shipping_country() ) );
+		$remove_set = array_filter( array( $city, $province, $country, 'ca', 'canada' ) );
+
+		while ( count( $parts ) > 1 ) {
+			$last = strtolower( trim( (string) end( $parts ) ) );
+			if ( ! in_array( $last, $remove_set, true ) ) {
+				break;
+			}
+			array_pop( $parts );
+		}
+
+		return trim( implode( ', ', $parts ) );
 	}
 
 	/**
